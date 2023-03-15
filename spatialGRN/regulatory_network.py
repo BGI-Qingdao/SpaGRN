@@ -12,19 +12,17 @@
 # python core modules
 import os
 import csv
-import warnings
 from typing import Union
 
 # third party modules
 import json
 import glob
 import anndata
+import logging
 import scipy.sparse
 import pandas as pd
 import numpy as np
-import seaborn as sns
 import scanpy as sc
-import matplotlib.pyplot as plt
 from multiprocessing import cpu_count
 from pyscenic.export import export2loom
 from dask.diagnostics import ProgressBar
@@ -33,13 +31,13 @@ from arboreto.algo import grnboost2
 from ctxcore.rnkdb import FeatherRankingDatabase as RankingDatabase
 from pyscenic.prune import prune2df, df2regulons
 from pyscenic.utils import modules_from_adjacencies
-from pyscenic.cli.utils import load_signatures
-from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
 from stereo.core.stereo_exp_data import StereoExpData
 from stereo.io.reader import read_gef
 
 # modules in self project
+
+logger = logging.getLogger()
 
 
 def _name(fname: str) -> str:
