@@ -11,10 +11,9 @@
 
 import sys
 import json
-import warnings
-warnings.filterwarnings('ignore')
 import pandas as pd
 from multiprocessing import cpu_count
+from plot import PlotRegulatoryNetwork
 from regulatory_network import InferenceRegulatoryNetwork
 
 
