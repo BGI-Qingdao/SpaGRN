@@ -49,19 +49,127 @@ def _name(fname: str) -> str:
     return os.path.splitext(os.path.basename(fname))[0]
 
 
+class ScoexpMatrix:
+    """
+    Algorithms to calulate Scoexp matrix 
+    based on CellTrek (10.1038/s41587-022-01233-1) 
+    see CellTrek from https://github.com/navinlabcode/CellTrek
+    """
+
+    @staticmethod
+    def rbfk(dis_mat, sigm, zero_diag=True):
+        """
+        Radial basis function kernel
+        
+        :param dis_mat Distance matrix
+        :param sigm Width of rbfk
+        :param zero_diag
+        :return rbf matrix
+        """
+        rbfk_out = np.exp(-1 * np.square(dis_mat) / (2*sigm**2) )
+        if zero_diag:
+            rbfk_out[np.diag_indices_from(rbfk_out)]=0
+        return rbfk_out
+
+    @staticmethod
+    def wcor(X, W, method='pearson', na_zero=True) :
+        """
+        Weighted cross correlation
+        
+        :param X Expression matrix, n X p
+        :param W Weight matrix, n X n
+        :param method Correlation method, pearson or spearman
+        :param na_zero Na to zero
+        :return correlation matrix
+        """
+        from scipy.stats import rankdata
+        from sklearn.preprocessing import scale
+        if method == 'spearman':
+            X = np.apply_along_axis(rankdata ,0, X) # rank each columns
+        X = scale(X,axis=0) # scale for each columns
+        W_cov_temp = np.matmul( np.matmul(X.T, W), X )
+        W_diag_mat = np.sqrt( np.matmul(np.diag(W_cov_temp), np.diag(W_cov_temp).T ) )
+        cor_mat = W_cov_temp / W_diag_mat
+        if na_zero:
+            np.nan_to_num(cor_mat,False)
+        return cor_mat
+
+    @staticmethod
+    def scoexp( irn_data,
+                gene_list =[],
+                tf_list = [],
+                sigm=15,
+                zero_cutoff=5,
+                cor_method='spearman',
+                ):
+        """
+        Main logic for scoexp calculation
+ 
+        :param irn_data: object of InferenceRegulatoryNetwork
+        :param sigm: sigma for RBF kernel, default 15.
+        :param gene_list: filter gene by exp cell > zero_cutoff% of all cells if len(gene_list)<2, otherwise use this gene set.
+        :param tf_list, tf gene list. Use gene_list if tf_list is empty.
+        :param zero_cutoff: filter gene by exp cell > zero_cutoff% if if len(gene_list)<2
+        :param cor_method: 'spearman' or 'pearson'
+        :return: dataframe of tf-gene-importances
+        """
+        from scipy.spatial import distance_matrix
+        cell_gene_matrix = irn_data.matrix()
+        if not isinstance(cell_gene_matrix,np.ndarray):
+            cell_gene_matrix = cell_gene_matrix.toarray()
+        # check gene_list
+        if len(gene_list)<2:
+            print('gene filtering...',flush=True)
+            feature_nz = np.apply_along_axis(lambda x: np.mean(x!=0)*100,0, cell_gene_matrix)
+            features = irn_data.gene_names()[feature_nz > zero_cutoff]
+            print(f'{len(features)} features after filtering...',flush=True)
+        else:
+            features = np.intersect1d(np.array(gene_list),irn_data.gene_names())
+            if len(features)<2:
+                print('No enough genes in gene_list detected, exit...',flush=True)
+                sys.exit(12)
+        # check tf_list
+        if len(tf_list) < 1:
+            tf_list = features
+        else:
+            tf_list = np.intersect1d(np.array(tf_list),features)
+
+        gene_select = np.isin(irn_data.gene_names(),features,assume_unique=True)
+        celltrek_inp = cell_gene_matrix[:,gene_select]
+        dist_mat = distance_matrix( irn_data.pos(),
+                                    irn_data.pos() )
+        kern_mat = rbfk(dist_mat, sigm=sigm, zero_diag=False)
+        print('Calculating spatial-weighted cross-correlation...',flush=True)
+        wcor_mat = wcor(X=celltrek_inp, W=kern_mat, method=cor_method)
+        print('Calculating spatial-weighted cross-correlation done.',flush=True)
+        df = pd.DataFrame(data=wcor_mat, index=features, columns=features)
+        #extract tf-gene-importances
+        df = df[tf_list].copy().T
+        df['TF'] = tf_list
+        ret = df.melt(id_vars=['TF'])
+        ret.columns = ['TF','target','importance']
+        return ret
+
+
 class InferenceRegulatoryNetwork:
     """
     Algorithms to inference Gene Regulatory Networks (GRN)
     """
 
-    def __init__(self, data):
+    def __init__(self, data, pos_label = 'spatial'):
+        """
+        Constructor of this Object.
+        :param data:
+        :param pos_label: pos key in obsm, default 'spatial'. Only used if data is Anndata. 
+        :return:
+        """
         # input
         self._data = data
         self._matrix = None  # pd.DataFrame
         self._gene_names = []
         self._cell_names = []
 
-        self.load_data_info()
+        self.load_data_info(pos_label)
 
         self._tfs = []
 
@@ -80,9 +188,15 @@ class InferenceRegulatoryNetwork:
         return self._data
 
     @data.setter
-    def data(self, data: Union[StereoExpData, anndata.AnnData]):
+    def data(self, data: Union[StereoExpData, anndata.AnnData], pos_label = 'spatial'):
+        """
+        re-assign data for this object.
+        :param data:
+        :param pos_label: pos key in obsm, default 'spatial'. Only used if data is Anndata. 
+        :return:
+        """
         self._data = data
-        self.load_data_info()
+        self.load_data_info(pos_label)
 
     @property
     def matrix(self):
@@ -139,6 +253,9 @@ class InferenceRegulatoryNetwork:
     @auc_mtx.setter
     def auc_mtx(self, value):
         self._auc_mtx = value
+    @property
+    def pos(self):
+        return self._pos    
 
     # @property
     # def num_workers(self):
@@ -156,15 +273,21 @@ class InferenceRegulatoryNetwork:
     # def thld(self, value):
     #     self._thld = value
 
-    def load_data_info(self):
-        """"""
+    def load_data_info(self, pos_label):
+        """
+        Load useful data to properties.
+        :param pos_label: pos key in obsm, default 'spatial'. Only used if data is Anndata. 
+        :return:
+        """
         if isinstance(self._data, StereoExpData):
             self._matrix = self._data.exp_matrix
             self._gene_names = self._data.gene_names
             self._cell_names = self._data.cell_names
+            self._pos = self._data.position
         elif isinstance(self._data, anndata.AnnData):
             self._gene_names = self._data.var_names
             self._cell_names = self._data.obs_names
+            self._pos = self._data.obsm[pos_label]
 
     @staticmethod
     def is_valid_exp_matrix(mtx: pd.DataFrame):
@@ -564,7 +687,10 @@ class InferenceRegulatoryNetwork:
              tfs_fn,
              target_genes=None,
              num_workers=None,
-             save=True):
+             save=True,
+             method='grnboost2',
+             sigm=15,
+        ):
         """
         :param databases:
         :param motif_anno_fn:
@@ -572,6 +698,8 @@ class InferenceRegulatoryNetwork:
         :param target_genes:
         :param num_workers:
         :param save:
+        :param method: method from [grnboost2/hotspot/scoexp]
+        :param sigm: sigma for scoexp, default 15 (assumption for 15um)
         :return:
         """
         matrix = self._matrix
@@ -593,7 +721,10 @@ class InferenceRegulatoryNetwork:
         # 2. load the ranking databases
         dbs = self.load_database(databases)
         # 3. GRN inference
-        adjacencies = self.grn_inference(matrix, genes=target_genes, tf_names=tfs, num_workers=num_workers)
+        if method == 'grnboost2':
+            adjacencies = self.grn_inference(matrix, genes=target_genes, tf_names=tfs, num_workers=num_workers)
+        elif method == 'scoexp':
+            adjacencies = ScoexpMatrix.scoexp(self,target_genes,tfs,sigm=sigm)
         modules = self.get_modules(adjacencies, df)
         # 4. Regulons prediction aka cisTarget
         regulons = self.prune_modules(modules, dbs, motif_anno_fn, num_workers=24)
