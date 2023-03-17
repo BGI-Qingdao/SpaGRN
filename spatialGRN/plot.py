@@ -20,6 +20,8 @@ import logging
 import pandas as pd
 import numpy as np
 import scanpy as sc
+import seaborn as sns
+import matplotlib.pyplot as plt
 from pyscenic.cli.utils import load_signatures
 from pyscenic.rss import regulon_specificity_scores
 from stereo.core.stereo_exp_data import StereoExpData
@@ -35,10 +37,18 @@ class PlotRegulatoryNetwork:
     """
 
     def __init__(self, data):
-        super(PlotRegulatoryNetwork, self).__init__(data)
+        self._data = data
         self._regulon_list = None
         self._auc_mtx = None
         self._regulon_dict = None
+
+    @property
+    def data(self):
+        return self._data
+
+    @data.setter
+    def data(self, value):
+        self._data = value
 
     @property
     def regulon_list(self):
@@ -86,7 +96,7 @@ class PlotRegulatoryNetwork:
         if isinstance(data, anndata.AnnData):
             return sc.pl.dotplot(data, var_names=gene_names, groupby=cluster_label, save=save, **kwargs)
         elif isinstance(data, StereoExpData):
-            logger.info('for StereoExpData object, please use function: dotplot_stereo')
+            logger.warning('for StereoExpData object, please use function: dotplot_stereo')
 
     # dotplot method for StereoExpData
     @staticmethod
