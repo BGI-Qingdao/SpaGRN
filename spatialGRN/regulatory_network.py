@@ -61,10 +61,10 @@ class ScoexpMatrix:
         """
         Radial basis function kernel
         
-        :param dis_mat Distance matrix
-        :param sigm Width of rbfk
-        :param zero_diag
-        :return rbf matrix
+        :param dis_mat: Distance matrix
+        :param sigm: Width of rbfk
+        :param zero_diag: True/False, default True 
+        :return: rbf matrix
         """
         rbfk_out = np.exp(-1 * np.square(dis_mat) / (2 * sigm ** 2))
         if zero_diag:
@@ -76,11 +76,11 @@ class ScoexpMatrix:
         """
         Weighted cross correlation
         
-        :param X Expression matrix, n X p
-        :param W Weight matrix, n X n
-        :param method Correlation method, pearson or spearman
-        :param na_zero Na to zero
-        :return correlation matrix
+        :param X: Expression matrix, n X p
+        :param W: Weight matrix, n X n
+        :param method: Correlation method, pearson or spearman
+        :param na_zero: Na to zero
+        :return: correlation matrix
         """
         from scipy.stats import rankdata
         from sklearn.preprocessing import scale
@@ -114,17 +114,17 @@ class ScoexpMatrix:
         :return: dataframe of tf-gene-importances
         """
         from scipy.spatial import distance_matrix
-        cell_gene_matrix = irn_data.matrix()
+        cell_gene_matrix = irn_data.matrix
         if not isinstance(cell_gene_matrix, np.ndarray):
             cell_gene_matrix = cell_gene_matrix.toarray()
         # check gene_list
         if len(gene_list) < 2:
             logger.info('gene filtering...', flush=True)
             feature_nz = np.apply_along_axis(lambda x: np.mean(x != 0) * 100, 0, cell_gene_matrix)
-            features = irn_data.gene_names()[feature_nz > zero_cutoff]
+            features = irn_data.gene_names[feature_nz > zero_cutoff]
             logger.info(f'{len(features)} features after filtering...', flush=True)
         else:
-            features = np.intersect1d(np.array(gene_list), irn_data.gene_names())
+            features = np.intersect1d(np.array(gene_list), irn_data.gene_names)
             if len(features) < 2:
                 logger.error('No enough genes in gene_list detected, exit...', flush=True)
                 sys.exit(12)
@@ -134,10 +134,10 @@ class ScoexpMatrix:
         else:
             tf_list = np.intersect1d(np.array(tf_list), features)
 
-        gene_select = np.isin(irn_data.gene_names(), features, assume_unique=True)
+        gene_select = np.isin(irn_data.gene_names, features, assume_unique=True)
         celltrek_inp = cell_gene_matrix[:, gene_select]
-        dist_mat = distance_matrix(irn_data.pos(),
-                                   irn_data.pos())
+        dist_mat = distance_matrix(irn_data.position,
+                                   irn_data.position)
         kern_mat = ScoexpMatrix.rbfk(dist_mat, sigm=sigm, zero_diag=False)
         logger.info('Calculating spatial-weighted cross-correlation...', flush=True)
         wcor_mat = ScoexpMatrix.wcor(X=celltrek_inp, W=kern_mat, method=cor_method)

@@ -13,31 +13,28 @@ import sys
 import json
 import pandas as pd
 from multiprocessing import cpu_count
-from plot import PlotRegulatoryNetwork
-from regulatory_network import InferenceRegulatoryNetwork
-from plot import PlotRegulatoryNetwork
+from spatialGRN.regulatory_network import InferenceRegulatoryNetwork
+from spatialGRN.plot import PlotRegulatoryNetwork
 
 
 if __name__ == '__main__':
-    # supporting files
+    #TODO: upload those data to public url
     tfs_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/resource/tfs/test_mm_mgi_tfs.txt'
     database_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/database/mm10_10kbp_up_10kbp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather'
     motif_anno_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/resource/motifs/motifs-v10nr_clust-nr.mgi-m0.001-o0.0.tbl'
-
     # clustering output for stereopy data]
     meta_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/resource/StereopyData/meta_mousebrain.csv'
 
     # h5ad data
     # fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/resource/StereopyData/MouseBrainCellbin.h5ad'
     # data = InferenceRegulatoryNetwork.load_anndata_by_cluster(fn, 'psuedo_class', ['HBGLU9', 'TEINH12', 'HBSER4'])
-
     # alternative: small h5ad for testing
     fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/resource/StereopyData/test_grn_MouseBrainCellbin.h5ad'
     data = InferenceRegulatoryNetwork.read_file(fn)
 
     # create grn
     grn = InferenceRegulatoryNetwork(data)
-    grn.main(database_fn, motif_anno_fn, tfs_fn, num_workers=cpu_count(), save=True, cache=True)
+    grn.main(database_fn, motif_anno_fn, tfs_fn, num_workers=cpu_count(), save=True, cache=True,method='scoexp')
 
     # plot grn
     grn_plot = PlotRegulatoryNetwork(data)
