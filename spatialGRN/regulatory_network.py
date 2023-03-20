@@ -20,6 +20,7 @@ import json
 import glob
 import anndata
 import logging
+import hotspot
 import scipy.sparse
 import pandas as pd
 import numpy as np
@@ -180,8 +181,30 @@ class InferenceRegulatoryNetwork:
         self._regulon_dict = None  # dictionary
 
         # other settings
-        self._num_workers = None  # int
-        self._auc_threshold = None  # float
+        # self._params = {'hotspot': {
+        #                     'num_workers': None,
+        #                     'rank_threshold': 1500,
+        #                     'prune_auc_threshold': 0.001,
+        #                     'nes_threshold': 3.0,
+        #                     'motif_similarity_fdr': 0.1,
+        #                     'auc_threshold: 0.5
+        #                 },
+        #                 'grnboost': {
+        #                     'num_workers': None,
+        #                     'rank_threshold': 1500,
+        #                     'prune_auc_threshold': 0.5,
+        #                     'nes_threshold': 3.0,
+        #                     'motif_similarity_fdr': 0.05,
+        #                     'auc_threshold': 0.5
+        #                 },
+        #                 'scoexp': {
+        #                     'num_workers': None,
+        #                     'rank_threshold': 1500,
+        #                     'prune_auc_threshold': 0.001,
+        #                     'nes_threshold': 3.0,
+        #                     'motif_similarity_fdr': 0.05,
+        #                     'auc_threshold': 0.5
+        #                 }}
 
     @property
     def data(self):
@@ -261,22 +284,6 @@ class InferenceRegulatoryNetwork:
     @position.setter
     def position(self, value):
         self._position = value
-
-    @property
-    def num_workers(self):
-        return self._num_workers
-
-    @num_workers.setter
-    def num_workers(self, value):
-        self._num_workers = value
-
-    @property
-    def auc_threshold(self):
-        return self._auc_threshold
-
-    @auc_threshold.setter
-    def auc_threshold(self, value):
-        self._auc_threshold = value
 
     def load_data_info(self, pos_label):
         """
@@ -430,7 +437,7 @@ class InferenceRegulatoryNetwork:
                       fn: str = 'adj.csv',
                       **kwargs) -> pd.DataFrame:
         """
-        Inference of co-expression modules
+        Inference of co-expression modules via grnboost2 method
         :param matrix:
             * pandas DataFrame (rows=observations, columns=genes)
             * dense 2D numpy.ndarray
@@ -465,7 +472,7 @@ class InferenceRegulatoryNetwork:
                                 client_or_address=custom_client,
                                 **kwargs)
         if save:
-            adjacencies.to_csv(fn, index=False)  # adj.csv, don't have to save into a file
+            adjacencies.to_csv(fn, index=False)
         self.adjacencies = adjacencies
         return adjacencies
 
@@ -479,6 +486,77 @@ class InferenceRegulatoryNetwork:
         unique_adj_genes = set(adjacencies["TF"]).union(set(adjacencies["target"])) - set(df.columns)
         logger.info(f'find {len(unique_adj_genes) / len(set(df.columns))} unique genes')
         return unique_adj_genes
+
+    @staticmethod
+    def hotspot_matrix(data: anndata.AnnData,
+                       model='danb',
+                       latent_obsm_key="X_pca",
+                       umi_counts_obs_key="total_counts",
+                       weighted_graph=False,
+                       n_neighbors=30,
+                       fdr_threshold=0.05,
+                       tf_list=None,
+                       save=True,
+                       jobs=None,
+                       fn: str = 'adj.csv',
+                       **kwargs) -> pd.DataFrame:
+        """
+        Inference of co-expression modules via hotspot method
+        :param data: Count matrix (shape is cells by genes)
+        :param layer_key: Key in adata.layers with count data, uses adata.X if None.
+        :param model: Specifies the null model to use for gene expression.
+            Valid choices are:
+                * 'danb': Depth-Adjusted Negative Binomial
+                * 'bernoulli': Models probability of detection
+                * 'normal': Depth-Adjusted Normal
+                * 'none': Assumes data has been pre-standardized
+        :param latent_obsm_key: Latent space encoding cell-cell similarities with euclidean
+            distances.  Shape is (cells x dims). Input is key in adata.obsm
+        :param distances_obsp_key: Distances encoding cell-cell similarities directly
+            Shape is (cells x cells). Input is key in adata.obsp
+        :param umi_counts_obs_key: Total umi count per cell.  Used as a size factor.
+            If omitted, the sum over genes in the counts matrix is used
+        :param weighted_graph: Whether or not to create a weighted graph
+        :param n_neighbors: Neighborhood size
+        :param neighborhood_factor: Used when creating a weighted graph.  Sets how quickly weights decay
+            relative to the distances within the neighborhood.  The weight for
+            a cell with a distance d will decay as exp(-d/D) where D is the distance
+            to the `n_neighbors`/`neighborhood_factor`-th neighbor.
+        :param approx_neighbors: Use approximate nearest neighbors or exact scikit-learn neighbors. Only
+            when hotspot initialized with `latent`.
+        :param fdr_threshold: Correlation theshold at which to stop assigning genes to modules
+        :param tf_list: predefined TF names
+        :param save: if save results onto disk
+        :param jobs: Number of parallel jobs to run
+        :param fn: output file name
+        :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
+        """
+        # remove all zero genes
+        sc.pp.filter_genes(data, min_counts=1, inplace=True)  # TODO: move outside of the function
+
+        hs = hotspot.Hotspot(data, model=model, latent_obsm_key=latent_obsm_key, umi_counts_obs_key=umi_counts_obs_key,
+                             **kwargs)
+        hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
+        hs_results = hs.compute_autocorrelations()
+        hs_genes = hs_results.loc[hs_results.FDR < fdr_threshold].index  # Select genes
+        local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
+        # local_correlations.to_csv('local_correlations.csv')
+        logger.info('Network Inference DONE')
+        logger.info(f'Hotspot: create {local_correlations.shape[0]} features')
+
+        # subset by TFs
+        if tf_list is not None:
+            common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
+            assert len(common_tf_list) > 0, 'predefined TFs not found in data'
+            local_correlations = local_correlations[common_tf_list]
+
+        # reshape matrix
+        local_correlations['TF'] = local_correlations.columns
+        local_correlations = local_correlations.melt(id_vars=['TF'])
+        local_correlations.columns = ['TF', 'target', 'importance']
+        if save:
+            local_correlations.to_csv(fn, index=False)
+        return local_correlations
 
     @staticmethod
     def load_database(database_dir: str) -> list:
@@ -518,7 +596,6 @@ class InferenceRegulatoryNetwork:
                       dbs: list,
                       motif_anno_fn: str,
                       num_workers: int,
-                      is_prune: bool = True,
                       cache: bool = True,
                       save: bool = True,
                       fn: str = 'motifs.csv',
@@ -526,15 +603,25 @@ class InferenceRegulatoryNetwork:
         """
         First, calculate a list of enriched motifs and the corresponding target genes for all modules.
         Then, create regulon_list from this table of enriched motifs.
-        :param modules:
-        :param dbs:
-        :param motif_anno_fn:
-        :param num_workers:
-        :param is_prune:
+        :param modules: The sequence of modules.
+        :param dbs: The sequence of databases.
+        :param motif_anno_fn: The name of the file that contains the motif annotations to use.
+        :param rank_threshold: The total number of ranked genes to take into account when creating a recovery curve.
+        :param auc_threshold: The fraction of the ranked genome to take into account for the calculation of the
+            Area Under the recovery Curve.
+        :param nes_threshold: The Normalized Enrichment Score (NES) threshold to select enriched features.
+        :param motif_similarity_fdr: The maximum False Discovery Rate to find factor annotations for enriched motifs.
+        :param orthologuous_identity_threshold: The minimum orthologuous identity to find factor annotations
+            for enriched motifs.
+        :param weighted_recovery: Use weights of a gene signature when calculating recovery curves?
+        :param num_workers: If not using a cluster, the number of workers to use for the calculation.
+            None of all available CPUs need to be used.
+        :param module_chunksize: The size of the chunk to use when using the dask framework.
         :param cache:
         :param save:
         :param fn:
-        :return:
+        :param kwargs:
+        :return: A dataframe.
         """
         if cache and os.path.isfile(fn):
             logger.info(f'cached file {fn} found')
@@ -549,21 +636,15 @@ class InferenceRegulatoryNetwork:
 
         if num_workers is None:
             num_workers = cpu_count()
-        if is_prune:
-            with ProgressBar():
-                df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)
-                df.to_csv(fn)  # motifs filename
-            regulon_list = df2regulons(df)
-            self.regulon_list = regulon_list
+        with ProgressBar():
+            df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)
+            df.to_csv(fn)
+        regulon_list = df2regulons(df)
+        self.regulon_list = regulon_list
 
-            if save:
-                self.regulons_to_json(regulon_list)
-
-            # alternative way of getting regulon_list, without creating df first
-            # regulon_list = prune(dbs, modules, motif_anno_fn)
-            return regulon_list
-        else:
-            logger.warning('if prune_modules is set to False')
+        if save:
+            self.regulons_to_json(regulon_list)
+        return regulon_list
 
     @staticmethod
     def get_regulon_dict(regulon_list: list) -> dict:
@@ -588,18 +669,22 @@ class InferenceRegulatoryNetwork:
                            fn='auc.csv',
                            **kwargs) -> pd.DataFrame:
         """
+        Calculate enrichment of gene signatures for cells/spots.
 
         :param matrix:
             * pandas DataFrame (rows=observations, columns=genes)
             * dense 2D numpy.ndarray
             * sparse scipy.sparse.csc_matrix
         :param regulons: list of ctxcore.genesig.Regulon objects
-        :param auc_threshold:
-        :param num_workers:
+        :param auc_threshold: The fraction of the ranked genome to take into account for the calculation of the
+            Area Under the recovery Curve.
+        :param num_workers: The number of cores to use.
+        :param noweights: Should the weights of the genes part of a signature be used in calculation of enrichment?
+        :param normalize: Normalize the AUC values to a maximum of 1.0 per regulon.
         :param cache:
         :param save:
         :param fn:
-        :return:
+        :return: A dataframe with the AUCs (n_cells x n_modules).
         """
         if cache and os.path.isfile(fn):
             logger.info(f'cached file {fn} found')
@@ -684,10 +769,6 @@ class InferenceRegulatoryNetwork:
         sub_df = sub_adj[sub_adj.target.isin(targets)]
         sub_df.to_csv(fn, index=False, sep='\t')
 
-    # HOTSPOT related
-    def get_input_spatial_matrix(self, data):
-        pass
-
     # GRN pipeline main logic
     def main(self,
              databases: str,
@@ -699,7 +780,7 @@ class InferenceRegulatoryNetwork:
              cache=True,
              method='grnboost2',
              sigm=15,
-             ):
+             prefix: str = 'project'):
         """
         :param databases:
         :param motif_anno_fn:
@@ -710,6 +791,7 @@ class InferenceRegulatoryNetwork:
         :param cache:
         :param method: method from [grnboost2/hotspot/scoexp]
         :param sigm: sigma for scoexp, default 15 (assumption for 15um)
+        :param prefix:
         :return:
         """
         global adjacencies
@@ -738,9 +820,12 @@ class InferenceRegulatoryNetwork:
                                              genes=target_genes,
                                              tf_names=tfs,
                                              num_workers=num_workers,
-                                             cache=cache)
+                                             cache=False, save=save, fn=f'{prefix}_adj.csv')
         elif method == 'scoexp':
             adjacencies = ScoexpMatrix.scoexp(self, target_genes, tfs, sigm=sigm)
+        elif method == 'hotspot':
+            adjacencies = self.hotspot_matrix(self.data, tf_list=tfs, jobs=num_workers)
+
         modules = self.get_modules(adjacencies, df)
 
         # 4. Regulons prediction aka cisTarget
@@ -749,7 +834,13 @@ class InferenceRegulatoryNetwork:
                                       motif_anno_fn,
                                       num_workers=num_workers,
                                       save=save,
-                                      cache=cache)
+                                      cache=cache,
+                                      fn=f'{prefix}_motifs.csv',
+                                      rank_threshold=1500,
+                                      auc_threshold=0.001,
+                                      nes_threshold=3.0,
+                                      motif_similarity_fdr=0.1)
+
         self.regulon_dict = self.get_regulon_dict(regulons)
 
         # 5: Cellular enrichment (aka AUCell)
@@ -758,11 +849,11 @@ class InferenceRegulatoryNetwork:
                                              auc_threshold=0.5,
                                              num_workers=num_workers,
                                              save=save,
-                                             cache=cache)
+                                             cache=cache,
+                                             fn=f'{prefix}_auc.csv')
 
         # save results
         if save:
-            self.regulons_to_csv(regulons)
             self.regulons_to_json(regulons)
             self.to_loom(df, auc_matrix, regulons)
-            #self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
+            # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
