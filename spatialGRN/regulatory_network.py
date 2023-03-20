@@ -62,9 +62,9 @@ class ScoexpMatrix:
         """
         Radial basis function kernel
         
-        :param dis_mat Distance matrix
-        :param sigm Width of rbfk
-        :param zero_diag
+        :param dis_mat: Distance matrix
+        :param sigm: Width of rbfk
+        :param zero_diag:
         :return rbf matrix
         """
         rbfk_out = np.exp(-1 * np.square(dis_mat) / (2 * sigm ** 2))
@@ -77,10 +77,10 @@ class ScoexpMatrix:
         """
         Weighted cross correlation
         
-        :param X Expression matrix, n X p
-        :param W Weight matrix, n X n
-        :param method Correlation method, pearson or spearman
-        :param na_zero Na to zero
+        :param X: Expression matrix, n X p
+        :param W: Weight matrix, n X n
+        :param method: Correlation method, pearson or spearman
+        :param na_zero: Na to zero
         :return correlation matrix
         """
         from scipy.stats import rankdata
@@ -102,6 +102,8 @@ class ScoexpMatrix:
                sigm=15,
                zero_cutoff=5,
                cor_method='spearman',
+               save: bool = True,
+               fn: str = 'adj.csv',
                ):
         """
         Main logic for scoexp calculation
@@ -109,23 +111,23 @@ class ScoexpMatrix:
         :param irn_data: object of InferenceRegulatoryNetwork
         :param sigm: sigma for RBF kernel, default 15.
         :param gene_list: filter gene by exp cell > zero_cutoff% of all cells if len(gene_list)<2, otherwise use this gene set.
-        :param tf_list, tf gene list. Use gene_list if tf_list is empty.
+        :param tf_list: tf gene list. Use gene_list if tf_list is empty.
         :param zero_cutoff: filter gene by exp cell > zero_cutoff% if if len(gene_list)<2
         :param cor_method: 'spearman' or 'pearson'
         :return: dataframe of tf-gene-importances
         """
         from scipy.spatial import distance_matrix
-        cell_gene_matrix = irn_data.matrix()
+        cell_gene_matrix = irn_data.matrix
         if not isinstance(cell_gene_matrix, np.ndarray):
             cell_gene_matrix = cell_gene_matrix.toarray()
         # check gene_list
         if len(gene_list) < 2:
             logger.info('gene filtering...', flush=True)
             feature_nz = np.apply_along_axis(lambda x: np.mean(x != 0) * 100, 0, cell_gene_matrix)
-            features = irn_data.gene_names()[feature_nz > zero_cutoff]
+            features = irn_data.gene_names[feature_nz > zero_cutoff]
             logger.info(f'{len(features)} features after filtering...', flush=True)
         else:
-            features = np.intersect1d(np.array(gene_list), irn_data.gene_names())
+            features = np.intersect1d(np.array(gene_list), irn_data.gene_names)
             if len(features) < 2:
                 logger.error('No enough genes in gene_list detected, exit...', flush=True)
                 sys.exit(12)
@@ -135,10 +137,10 @@ class ScoexpMatrix:
         else:
             tf_list = np.intersect1d(np.array(tf_list), features)
 
-        gene_select = np.isin(irn_data.gene_names(), features, assume_unique=True)
+        gene_select = np.isin(irn_data.gene_names, features, assume_unique=True)
         celltrek_inp = cell_gene_matrix[:, gene_select]
-        dist_mat = distance_matrix(irn_data.pos(),
-                                   irn_data.pos())
+        dist_mat = distance_matrix(irn_data.position,
+                                   irn_data.position)
         kern_mat = ScoexpMatrix.rbfk(dist_mat, sigm=sigm, zero_diag=False)
         logger.info('Calculating spatial-weighted cross-correlation...', flush=True)
         wcor_mat = ScoexpMatrix.wcor(X=celltrek_inp, W=kern_mat, method=cor_method)
@@ -148,7 +150,14 @@ class ScoexpMatrix:
         df = df[tf_list].copy().T
         df['TF'] = tf_list
         ret = df.melt(id_vars=['TF'])
-        ret.columns = ['TF', 'target', 'importance']
+        ret.columns = ['TF', 'target', 'importance0']
+        maxV = ret['importance0'].max()
+        ret['importance'] = ret['importance0'] / maxV
+        ret['importance'] = ret['importance'] * 1000
+        ret.drop(columns=['importance0'],inplace=True)
+        #ret.to_csv('adj.csv',header=True,index=False)
+        if save:
+            ret.to_csv(fn, index=False)
         return ret
 
 
@@ -822,7 +831,12 @@ class InferenceRegulatoryNetwork:
                                              num_workers=num_workers,
                                              cache=False, save=save, fn=f'{prefix}_adj.csv')
         elif method == 'scoexp':
-            adjacencies = ScoexpMatrix.scoexp(self, target_genes, tfs, sigm=sigm)
+            adjacencies = ScoexpMatrix.scoexp(self,
+                                              target_genes, 
+                                              tfs,
+                                              sigm=sigm,
+                                              save=save,
+                                              fn=f'{prefix}_adj.csv')
         elif method == 'hotspot':
             adjacencies = self.hotspot_matrix(self.data, tf_list=tfs, jobs=num_workers)
 
