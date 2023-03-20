@@ -241,10 +241,9 @@ class PlotRegulatoryNetwork:
         # prepare plotting data
         sub_zscore = auc_zscore[reg_name]
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
-        zorder = np.argsort(sub_zscore[reg_name].values)
+        zorder = np.argsort(sub_zscore.values)
         # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore[reg_name][zorder], marker='.',
-                         edgecolors='none', cmap='plasma', lw=0, **kwargs)
+        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.', edgecolors='none', cmap='plasma', lw=0, **kwargs)
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
@@ -271,10 +270,9 @@ class PlotRegulatoryNetwork:
         # prepare plotting data
         sub_zscore = auc_zscore[reg_name]
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
-        zorder = np.argsort(sub_zscore[reg_name].values)
+        zorder = np.argsort(sub_zscore.values)
         # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore[reg_name][zorder], marker='.',
-                         edgecolors='none', cmap='plasma', lw=0, **kwargs)
+        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.', edgecolors='none', cmap='plasma', lw=0, **kwargs)
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
