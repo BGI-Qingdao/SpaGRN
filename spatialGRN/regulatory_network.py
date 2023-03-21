@@ -566,6 +566,9 @@ class InferenceRegulatoryNetwork:
         local_correlations['TF'] = local_correlations.columns
         local_correlations = local_correlations.melt(id_vars=['TF'])
         local_correlations.columns = ['TF', 'target', 'importance']
+        # remove if TF = target
+        local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
+
         if save:
             local_correlations.to_csv(fn, index=False)
         return local_correlations
