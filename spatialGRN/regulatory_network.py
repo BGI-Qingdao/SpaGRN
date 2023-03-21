@@ -13,18 +13,19 @@
 import os
 import csv
 import sys
+import logging
 from typing import Union
 
 # third party modules
 import json
 import glob
 import anndata
-import logging
 import hotspot
 import scipy.sparse
 import pandas as pd
 import numpy as np
 import scanpy as sc
+from copy import deepcopy
 from multiprocessing import cpu_count
 from pyscenic.export import export2loom
 from dask.diagnostics import ProgressBar
@@ -37,8 +38,7 @@ from pyscenic.aucell import aucell
 from stereo.core.stereo_exp_data import StereoExpData
 
 # modules in self project
-
-logger = logging.getLogger()
+from spa_logger import logger
 
 
 def _name(fname: str) -> str:
@@ -179,10 +179,10 @@ class InferenceRegulatoryNetwork:
         # input
         self._data = data
         self._matrix = None  # pd.DataFrame
-        self._gene_names = []
-        self._cell_names = []
+        self._gene_names = None
+        self._cell_names = None
         self._position = None  # np.array
-        self._tfs = []  # list
+        self._tfs = None  # list
 
         self.load_data_info(pos_label)
 
@@ -193,30 +193,30 @@ class InferenceRegulatoryNetwork:
         self._regulon_dict = None  # dictionary
 
         # other settings
-        # self._params = {'hotspot': {
-        #                     'num_workers': None,
-        #                     'rank_threshold': 1500,
-        #                     'prune_auc_threshold': 0.001,
-        #                     'nes_threshold': 3.0,
-        #                     'motif_similarity_fdr': 0.1,
-        #                     'auc_threshold: 0.5
-        #                 },
-        #                 'grnboost': {
-        #                     'num_workers': None,
-        #                     'rank_threshold': 1500,
-        #                     'prune_auc_threshold': 0.5,
-        #                     'nes_threshold': 3.0,
-        #                     'motif_similarity_fdr': 0.05,
-        #                     'auc_threshold': 0.5
-        #                 },
-        #                 'scoexp': {
-        #                     'num_workers': None,
-        #                     'rank_threshold': 1500,
-        #                     'prune_auc_threshold': 0.001,
-        #                     'nes_threshold': 3.0,
-        #                     'motif_similarity_fdr': 0.05,
-        #                     'auc_threshold': 0.5
-        #                 }}
+        self._params = {'hotspot': {
+                            'num_workers': None,
+                            'rank_threshold': 1500,
+                            'prune_auc_threshold': 0.001,
+                            'nes_threshold': 3.0,
+                            'motif_similarity_fdr': 0.1,
+                            'auc_threshold': 0.5
+                        },
+                        'grnboost': {
+                            'num_workers': None,
+                            'rank_threshold': 1500,
+                            'prune_auc_threshold': 0.5,
+                            'nes_threshold': 3.0,
+                            'motif_similarity_fdr': 0.05,
+                            'auc_threshold': 0.5
+                        },
+                        'scoexp': {
+                            'num_workers': None,
+                            'rank_threshold': 1500,
+                            'prune_auc_threshold': 0.5,
+                            'nes_threshold': 3.0,
+                            'motif_similarity_fdr': 0.05,
+                            'auc_threshold': 0.5
+                        }}
 
     @property
     def data(self):
@@ -297,6 +297,33 @@ class InferenceRegulatoryNetwork:
     def position(self, value):
         self._position = value
 
+    @property
+    def params(self):
+        return self._params
+
+    @params.setter
+    def params(self, value):
+        """only use this function when setting params as a whole.
+        use add_params to solely update/add some of the params and keep the rest unchanged"""
+        self._params = value
+
+    def add_params(self, method: str, dic: dict):
+        """
+        :param method:
+        :param dic:
+
+        Example:
+            grn = InferenceRegulatoryNetwork(data)
+            grn.add_params('hotspot', {'num_worker':12, 'auc_threshold': 0.001}
+        """
+        og_params = deepcopy(self._params)
+        try:
+            for key, value in dic:
+                self._params[method][key] = value
+        except KeyError:
+            logger.warning('KeyError, params did not change')  # TODO
+            self._params = og_params
+
     def load_data_info(self, pos_label):
         """
         Load useful data to properties.
@@ -347,8 +374,6 @@ class InferenceRegulatoryNetwork:
             or
             grn.read_file('test.h5ad')
         """
-        from stereo.io.reader import read_gef
-
         logger.info('Loading expression data...')
         extension = os.path.splitext(fn)[1]
         logger.info(f'file extension is {extension}')
@@ -364,6 +389,7 @@ class InferenceRegulatoryNetwork:
             data = sc.read_h5ad(fn)
             return data
         elif extension == '.gef':
+            from stereo.io.reader import read_gef
             data = read_gef(file_path=fn, bin_type=bin_type)
             return data
 
@@ -401,6 +427,7 @@ class InferenceRegulatoryNetwork:
         :param target_clusters:
         :return:
         """
+
         return data.exp_matrix[meta[cluster_label].isin(target_clusters)]
 
     @staticmethod
@@ -793,7 +820,7 @@ class InferenceRegulatoryNetwork:
              num_workers=None,
              save=True,
              cache=True,
-             method='grnboost2',
+             method='grnboost',
              sigm=15,
              prefix: str = 'project'):
         """
@@ -804,11 +831,12 @@ class InferenceRegulatoryNetwork:
         :param num_workers:
         :param save:
         :param cache:
-        :param method: method from [grnboost2/hotspot/scoexp]
+        :param method: method from [grnboost/hotspot/scoexp]
         :param sigm: sigma for scoexp, default 15 (assumption for 15um)
         :param prefix:
         :return:
         """
+        assert method in ['grnboost', 'hotspot', 'scoexp'], "method options are grnboost/hotspot/scoexp"
         global adjacencies
         matrix = self._matrix
         df = self._data.to_df()
@@ -830,7 +858,7 @@ class InferenceRegulatoryNetwork:
         dbs = self.load_database(databases)
 
         # 3. GRN inference
-        if method == 'grnboost2':
+        if method == 'grnboost':
             adjacencies = self.grn_inference(matrix,
                                              genes=target_genes,
                                              tf_names=tfs,
@@ -856,17 +884,17 @@ class InferenceRegulatoryNetwork:
                                       save=save,
                                       cache=cache,
                                       fn=f'{prefix}_motifs.csv',
-                                      rank_threshold=1500,
-                                      auc_threshold=0.001,
-                                      nes_threshold=3.0,
-                                      motif_similarity_fdr=0.1)
+                                      rank_threshold=self.params[method]["rank_threshold"],
+                                      auc_threshold=self.params[method]["prune_auc_threshold"],
+                                      nes_threshold=self.params[method]["nes_threshold"],
+                                      motif_similarity_fdr=self.params[method]["motif_similarity_fdr"])
 
         self.regulon_dict = self.get_regulon_dict(regulons)
 
         # 5: Cellular enrichment (aka AUCell)
         auc_matrix = self.auc_activity_level(df,
                                              regulons,
-                                             auc_threshold=0.5,
+                                             auc_threshold=self.params[method]["auc_threshold"],
                                              num_workers=num_workers,
                                              save=save,
                                              cache=cache,
