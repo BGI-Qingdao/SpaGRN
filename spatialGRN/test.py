@@ -15,7 +15,6 @@ import json
 import argparse
 import pandas as pd
 from multiprocessing import cpu_count
-from plot import PlotRegulatoryNetwork
 from regulatory_network import InferenceRegulatoryNetwork as irn
 from plot import PlotRegulatoryNetwork as prn
 
@@ -29,8 +28,6 @@ if __name__ == '__main__':
     parser.add_argument("--method", type=str, default='grnboost', choices=['grnboost', 'hotspot', 'scoexp'], help='method to calculate TF-gene similarity')
     parser.add_argument("--output", '-o', type=str, help='output directory')
     args = parser.parse_args(args=None if sys.argv[1:] else ['--help'])
-
-
 
     # supporting files
     #tfs_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/stereopy/resource/tfs/mm_mgi_tfs.txt'
@@ -65,11 +62,22 @@ if __name__ == '__main__':
 
     # load data
     data = irn.read_file(fn)
+    data = irn.preprocess(data)
+
+    # create grn
     grn = irn(data)
     grn_plot = prn(data)
 
-    # create grn
-    grn.main(database_fn, motif_anno_fn, tfs_fn, num_workers=cpu_count(), cache=False, save=True, method=method, prefix=prefix)
+    # run analysis
+    grn.main(database_fn,
+             motif_anno_fn,
+             tfs_fn,
+             num_workers=cpu_count(),
+             cache=False,
+             save=True,
+             method=method,
+             prefix=prefix)
+
     grn_plot.auc_heatmap(grn.auc_mtx, fn=f'{method}_auc_heatmap.png')
     # grn.main(database_fn, motif_anno_fn, tfs_fn, num_workers=cpu_count(), cache=False, save=True, method='hotspot', prefix='hotspot')
     # grn_plot.auc_heatmap(grn.auc_mtx, fn='hotspot_auc_heatmap.png')

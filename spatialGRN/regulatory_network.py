@@ -453,7 +453,39 @@ class InferenceRegulatoryNetwork:
             tfs_in_file = [line.strip() for line in file.readlines()]
         return tfs_in_file
 
-    # Gene Regulatory Network inference methods
+    @staticmethod
+    def preprocess(adata: anndata.AnnData, min_genes=200, min_cells=3, min_counts=1, max_gene_num=4000, mt_percent=0.15):
+        """
+        Perform cleaning and quality control on the imported data before constructing gene regulatory network
+        :param adata:
+        :param min_genes:
+        :param min_cells:
+        :param min_counts:
+        :param max_gene_num:
+        :param mt_percent:
+        :return: a anndata.AnnData
+        """
+        adata.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
+        # find mito genes
+        sc.pp.ﬁlter_cells(adata, min_genes=0)
+        # mito and genes/counts cuts
+        mito_genes = adata.var_names.str.startswith('MT-')
+        # for each cell compute fraction of counts in mito genes vs. all genes
+        adata.obs['percent_mito'] = np.ravel(np.sum(adata[:, mito_genes].X, axis=1)) / np.ravel(np.sum(adata.X,axis=1))
+        # add the total counts per cell as observations-annotation to adata
+        adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
+
+        logger.info('Start filtering data...')
+        # ﬁltering with basic thresholds for genes and cells
+        sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
+        sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
+        adata = adata[adata.obs['n_genes'] < max_gene_num, :]
+        adata = adata[adata.obs['percent_mito'] < mt_percent, :]
+        return adata
+
+    # ------------------------------------------------------#
+    #           step1: CALCULATE TF-GENE PAIRS              #
+    # ------------------------------------------------------#`
     @staticmethod
     def _set_client(num_workers: int) -> Client:
         """
@@ -570,9 +602,6 @@ class InferenceRegulatoryNetwork:
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
         """
-        # remove all zero genes
-        sc.pp.filter_genes(data, min_counts=1, inplace=True)  # TODO: move outside of the function
-
         hs = hotspot.Hotspot(data, model=model, latent_obsm_key=latent_obsm_key, umi_counts_obs_key=umi_counts_obs_key,
                              **kwargs)
         hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
