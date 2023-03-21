@@ -155,6 +155,9 @@ class ScoexpMatrix:
         ret['importance'] = ret['importance0'] / maxV
         ret['importance'] = ret['importance'] * 1000
         ret.drop(columns=['importance0'],inplace=True)
+        ret['valid'] = ret.apply(lambda row: row['TF']!=row['target'],axis=1)
+        ret = ret[ret['valid']].copy()
+        ret.drop(columns=['valid'],inplace=True)
         #ret.to_csv('adj.csv',header=True,index=False)
         if save:
             ret.to_csv(fn, index=False)
