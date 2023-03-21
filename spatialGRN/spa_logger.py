@@ -7,10 +7,12 @@ import logging
 
 
 class GetLogger:
-    def __init__(self, path, clevel=logging.DEBUG, Flevel=logging.DEBUG):
+    def __init__(self, path, clevel = logging.DEBUG, Flevel = logging.DEBUG):
         self.logger = logging.getLogger('spaGRN')
         self.logger.setLevel(logging.DEBUG)
-        fmt = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S')
+        fmt = logging.Formatter(
+            "[%(asctime)s][%(name)s][%(process)d][%(thread)d][%(module)s][%(lineno)d][%(levelname)s]: %(message)s",
+            '%Y-%m-%d %H:%M:%S')
         # set CMD logging
         sh = logging.StreamHandler()
         sh.setFormatter(fmt)
