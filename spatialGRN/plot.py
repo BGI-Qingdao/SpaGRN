@@ -299,7 +299,6 @@ class PlotRegulatoryNetwork:
         """
         meta = pd.read_csv('meta_mousebrain.csv', index_col=0).iloc[:, 0]
 
-        # TODO: adapt to StereoExpData
         # load the regulon_list from a file using the load_signatures function
         # regulons = load_signatures(regulons_fn)  # regulons_df -> list of regulon_list
         # data = add_scenic_metadata(data, auc_mtx, regulons)
