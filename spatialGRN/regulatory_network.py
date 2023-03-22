@@ -34,6 +34,7 @@ from arboreto.algo import grnboost2
 from ctxcore.rnkdb import FeatherRankingDatabase as RankingDatabase
 from pyscenic.prune import prune2df, df2regulons
 from pyscenic.utils import modules_from_adjacencies
+from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
 from stereo.core.stereo_exp_data import StereoExpData
 
@@ -122,14 +123,14 @@ class ScoexpMatrix:
             cell_gene_matrix = cell_gene_matrix.toarray()
         # check gene_list
         if len(gene_list) < 2:
-            logger.info('gene filtering...', flush=True)
+            logger.info('gene filtering...')
             feature_nz = np.apply_along_axis(lambda x: np.mean(x != 0) * 100, 0, cell_gene_matrix)
             features = irn_data.gene_names[feature_nz > zero_cutoff]
-            logger.info(f'{len(features)} features after filtering...', flush=True)
+            logger.info(f'{len(features)} features after filtering...')
         else:
             features = np.intersect1d(np.array(gene_list), irn_data.gene_names)
             if len(features) < 2:
-                logger.error('No enough genes in gene_list detected, exit...', flush=True)
+                logger.error('No enough genes in gene_list detected, exit...')
                 sys.exit(12)
         # check tf_list
         if len(tf_list) < 1:
@@ -142,9 +143,9 @@ class ScoexpMatrix:
         dist_mat = distance_matrix(irn_data.position,
                                    irn_data.position)
         kern_mat = ScoexpMatrix.rbfk(dist_mat, sigm=sigm, zero_diag=False)
-        logger.info('Calculating spatial-weighted cross-correlation...', flush=True)
+        logger.info('Calculating spatial-weighted cross-correlation...')
         wcor_mat = ScoexpMatrix.wcor(X=celltrek_inp, W=kern_mat, method=cor_method)
-        logger.info('Calculating spatial-weighted cross-correlation done.', flush=True)
+        logger.info('Calculating spatial-weighted cross-correlation done.')
         df = pd.DataFrame(data=wcor_mat, index=features, columns=features)
         # extract tf-gene-importances
         df = df[tf_list].copy().T
@@ -154,11 +155,11 @@ class ScoexpMatrix:
         maxV = ret['importance0'].max()
         ret['importance'] = ret['importance0'] / maxV
         ret['importance'] = ret['importance'] * 1000
-        ret.drop(columns=['importance0'],inplace=True)
-        ret['valid'] = ret.apply(lambda row: row['TF']!=row['target'],axis=1)
+        ret.drop(columns=['importance0'], inplace=True)
+        ret['valid'] = ret.apply(lambda row: row['TF'] != row['target'], axis=1)
         ret = ret[ret['valid']].copy()
-        ret.drop(columns=['valid'],inplace=True)
-        #ret.to_csv('adj.csv',header=True,index=False)
+        ret.drop(columns=['valid'], inplace=True)
+        # ret.to_csv('adj.csv',header=True,index=False)
         if save:
             ret.to_csv(fn, index=False)
         return ret
@@ -191,32 +192,33 @@ class InferenceRegulatoryNetwork:
         self._auc_mtx = None  # pd.DataFrame
         self._adjacencies = None  # pd.DataFrame
         self._regulon_dict = None  # dictionary
+        self._rss = None  # pd.DataFrame
 
         # other settings
         self._params = {'hotspot': {
-                            'num_workers': None,
-                            'rank_threshold': 1500,
-                            'prune_auc_threshold': 0.001,
-                            'nes_threshold': 3.0,
-                            'motif_similarity_fdr': 0.1,
-                            'auc_threshold': 0.5
-                        },
-                        'grnboost': {
-                            'num_workers': None,
-                            'rank_threshold': 1500,
-                            'prune_auc_threshold': 0.5,
-                            'nes_threshold': 3.0,
-                            'motif_similarity_fdr': 0.05,
-                            'auc_threshold': 0.5
-                        },
-                        'scoexp': {
-                            'num_workers': None,
-                            'rank_threshold': 1500,
-                            'prune_auc_threshold': 0.5,
-                            'nes_threshold': 3.0,
-                            'motif_similarity_fdr': 0.05,
-                            'auc_threshold': 0.5
-                        }}
+            'num_workers': None,
+            'rank_threshold': 1500,
+            'prune_auc_threshold': 0.07,
+            'nes_threshold': 3.0,
+            'motif_similarity_fdr': 0.1,
+            'auc_threshold': 0.5
+        },
+            'grnboost': {
+                'num_workers': None,
+                'rank_threshold': 1500,
+                'prune_auc_threshold': 0.07,
+                'nes_threshold': 3.0,
+                'motif_similarity_fdr': 0.05,
+                'auc_threshold': 0.5
+            },
+            'scoexp': {
+                'num_workers': None,
+                'rank_threshold': 1500,
+                'prune_auc_threshold': 0.07,
+                'nes_threshold': 3.0,
+                'motif_similarity_fdr': 0.05,
+                'auc_threshold': 0.5
+            }}
 
     @property
     def data(self):
@@ -298,6 +300,14 @@ class InferenceRegulatoryNetwork:
         self._position = value
 
     @property
+    def rss(self):
+        return self._rss
+
+    @rss.setter
+    def rss(self, value):
+        self._rss = value
+
+    @property
     def params(self):
         return self._params
 
@@ -314,7 +324,7 @@ class InferenceRegulatoryNetwork:
 
         Example:
             grn = InferenceRegulatoryNetwork(data)
-            grn.add_params('hotspot', {'num_worker':12, 'auc_threshold': 0.001}
+            grn.add_params('hotspot', {'num_worker':12, 'auc_threshold': 0.001})
         """
         og_params = deepcopy(self._params)
         try:
@@ -454,7 +464,8 @@ class InferenceRegulatoryNetwork:
         return tfs_in_file
 
     @staticmethod
-    def preprocess(adata: anndata.AnnData, min_genes=200, min_cells=3, min_counts=1, max_gene_num=4000, mt_percent=0.15):
+    def preprocess(adata: anndata.AnnData, min_genes=200, min_cells=3, min_counts=1, max_gene_num=4000,
+                   mt_percent=0.15):
         """
         Perform cleaning and quality control on the imported data before constructing gene regulatory network
         :param adata:
@@ -471,7 +482,7 @@ class InferenceRegulatoryNetwork:
         # mito and genes/counts cuts
         mito_genes = adata.var_names.str.startswith('MT-')
         # for each cell compute fraction of counts in mito genes vs. all genes
-        adata.obs['percent_mito'] = np.ravel(np.sum(adata[:, mito_genes].X, axis=1)) / np.ravel(np.sum(adata.X,axis=1))
+        adata.obs['percent_mito'] = np.ravel(np.sum(adata[:, mito_genes].X, axis=1)) / np.ravel(np.sum(adata.X, axis=1))
         # add the total counts per cell as observations-annotation to adata
         adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
 
@@ -485,7 +496,7 @@ class InferenceRegulatoryNetwork:
 
     # ------------------------------------------------------#
     #           step1: CALCULATE TF-GENE PAIRS              #
-    # ------------------------------------------------------#`
+    # ------------------------------------------------------#
     @staticmethod
     def _set_client(num_workers: int) -> Client:
         """
@@ -560,9 +571,10 @@ class InferenceRegulatoryNetwork:
 
     @staticmethod
     def hotspot_matrix(data: anndata.AnnData,
-                       model='danb',
-                       latent_obsm_key="X_pca",
-                       umi_counts_obs_key="total_counts",
+                       layer_key=None,
+                       model='bernoulli',
+                       latent_obsm_key="spatial",
+                       umi_counts_obs_key=None,
                        weighted_graph=False,
                        n_neighbors=30,
                        fdr_threshold=0.05,
@@ -586,7 +598,7 @@ class InferenceRegulatoryNetwork:
         :param distances_obsp_key: Distances encoding cell-cell similarities directly
             Shape is (cells x cells). Input is key in adata.obsp
         :param umi_counts_obs_key: Total umi count per cell.  Used as a size factor.
-            If omitted, the sum over genes in the counts matrix is used
+            If omitted, the sum over genes in the counts matrix is used. 'total_counts'
         :param weighted_graph: Whether or not to create a weighted graph
         :param n_neighbors: Neighborhood size
         :param neighborhood_factor: Used when creating a weighted graph.  Sets how quickly weights decay
@@ -602,26 +614,37 @@ class InferenceRegulatoryNetwork:
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
         """
-        hs = hotspot.Hotspot(data, model=model, latent_obsm_key=latent_obsm_key, umi_counts_obs_key=umi_counts_obs_key,
-                             **kwargs)
-        hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
-        hs_results = hs.compute_autocorrelations()
-        hs_genes = hs_results.loc[hs_results.FDR < fdr_threshold].index  # Select genes
-        local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
-        # local_correlations.to_csv('local_correlations.csv')
+        if os.path.isfile('local_correlations.csv'):
+            local_correlations = pd.read_csv('local_correlations.csv', index_col=0)
+        else:
+            hs = hotspot.Hotspot(data,
+                                 layer_key=layer_key,
+                                 model=model,
+                                 latent_obsm_key=latent_obsm_key,
+                                 umi_counts_obs_key=umi_counts_obs_key,
+                                 **kwargs)
+            hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
+            hs_results = hs.compute_autocorrelations()
+            hs_genes = hs_results.loc[hs_results.FDR < fdr_threshold].index  # Select genes
+            local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
+            local_correlations.to_csv('local_correlations.csv')
         logger.info('Network Inference DONE')
         logger.info(f'Hotspot: create {local_correlations.shape[0]} features')
 
         # subset by TFs
-        if tf_list is not None:
+        if tf_list:
             common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
+            logger.info(f'detected {len(common_tf_list)} predefined TF in data')
             assert len(common_tf_list) > 0, 'predefined TFs not found in data'
-            local_correlations = local_correlations[common_tf_list]
+            # local_correlations = local_correlations[common_tf_list]
+        else:
+            common_tf_list = local_correlations.columns
 
         # reshape matrix
         local_correlations['TF'] = local_correlations.columns
         local_correlations = local_correlations.melt(id_vars=['TF'])
         local_correlations.columns = ['TF', 'target', 'importance']
+        local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
         # remove if TF = target
         local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
 
@@ -641,13 +664,16 @@ class InferenceRegulatoryNetwork:
         dbs = [RankingDatabase(fname=fname, name=_name(fname)) for fname in db_fnames]
         return dbs
 
+    # ------------------------------------------------------#
+    #           step2:               #
+    # ------------------------------------------------------#
     def get_modules(self,
                     adjacencies: pd.DataFrame,
                     matrix,
                     rho_mask_dropouts: bool = False,
                     **kwargs):
         """
-        Inference of co-expression modules
+        Create of co-expression modules
 
         :param adjacencies:
         :param matrix:
@@ -709,12 +735,12 @@ class InferenceRegulatoryNetwork:
             num_workers = cpu_count()
         with ProgressBar():
             df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)
-            df.to_csv(fn)
+
         regulon_list = df2regulons(df)
         self.regulon_list = regulon_list
 
         if save:
-            self.regulons_to_json(regulon_list)
+            df.to_csv(fn)
         return regulon_list
 
     @staticmethod
@@ -730,6 +756,9 @@ class InferenceRegulatoryNetwork:
             regulon_dict[reg.name] = targets
         return regulon_dict
 
+    # ------------------------------------------------------#
+    #           step3: CALCULATE TF-GENE PAIRS              #
+    # ------------------------------------------------------#
     def auc_activity_level(self,
                            matrix,
                            regulons: list,
@@ -775,7 +804,35 @@ class InferenceRegulatoryNetwork:
             auc_mtx.to_csv(fn)
         return auc_mtx
 
-    # Results saving methods
+    # ------------------------------------------------------#
+    #                       HANDLE DATA                     #
+    # ------------------------------------------------------#
+    def cal_regulon_score(self, cluster_label='annotation', fn='regulon_specificity_scores.txt'):
+        """
+        Regulon specificity scores (RSS) across predicted cell types
+        :param cluster_label:
+        :return:
+        """
+        rss_cellType = regulon_specificity_scores(self.auc_mtx, self.data.obs[cluster_label])
+        rss_cellType.to_csv(fn)
+        self.rss = rss_cellType
+        return rss_cellType
+
+    def get_top_regulon(self, celltype, topn=5):
+        """
+
+        :param celltype:
+        :param topn:
+        :return:
+        """
+        topreg = []
+        topreg.extend(list(self.rss.T[celltype].sort_values(ascending=False)[:topn].index))
+        topreg = list(set(topreg))
+        return topreg
+
+    # ------------------------------------------------------#
+    #                 Results saving methods                #
+    # ------------------------------------------------------#
     def regulons_to_json(self, regulon_list: list, fn='regulons.json'):
         """
         Write regulon dictionary into json file
@@ -803,7 +860,7 @@ class InferenceRegulatoryNetwork:
             w.writerow(["Regulons", "Target_genes"])
             w.writerows(regulon_dict.items())
 
-    def to_loom(self, matrix: pd.DataFrame, auc_matrix: pd.DataFrame, regulons: list, loom_fn: str = 'output.loom'):
+    def to_loom(self, matrix: pd.DataFrame, auc_matrix: pd.DataFrame, regulons: list, fn: str = 'output.loom'):
         """
         Save GRN results in one loom file
         :param matrix:
@@ -814,7 +871,7 @@ class InferenceRegulatoryNetwork:
         """
         export2loom(ex_mtx=matrix, auc_mtx=auc_matrix,
                     regulons=[r.rename(r.name.replace('(+)', ' (' + str(len(r)) + 'g)')) for r in regulons],
-                    out_fname=loom_fn)
+                    out_fname=fn)
 
     def to_cytoscape(self,
                      regulons: list,
@@ -851,8 +908,15 @@ class InferenceRegulatoryNetwork:
              cache=True,
              method='grnboost',
              sigm=15,
-             prefix: str = 'project'):
+             prefix: str = 'project',
+
+             layers='raw_counts',
+             model='bernoulli',
+             latent_obsm_key='spatial',
+             umi_counts_obs_key=None,
+             cluster_label='annotation'):
         """
+
         :param databases:
         :param motif_anno_fn:
         :param tfs_fn:
@@ -863,6 +927,11 @@ class InferenceRegulatoryNetwork:
         :param method: method from [grnboost/hotspot/scoexp]
         :param sigm: sigma for scoexp, default 15 (assumption for 15um)
         :param prefix:
+        :param layers:
+        :param model:
+        :param latent_obsm_key:
+        :param umi_counts_obs_key:
+        :param cluster_label:
         :return:
         """
         assert method in ['grnboost', 'hotspot', 'scoexp'], "method options are grnboost/hotspot/scoexp"
@@ -892,16 +961,25 @@ class InferenceRegulatoryNetwork:
                                              genes=target_genes,
                                              tf_names=tfs,
                                              num_workers=num_workers,
-                                             cache=False, save=save, fn=f'{prefix}_adj.csv')
+                                             cache=cache,
+                                             save=save,
+                                             fn=f'{prefix}_adj.csv')
         elif method == 'scoexp':
             adjacencies = ScoexpMatrix.scoexp(self,
-                                              target_genes, 
+                                              target_genes,
                                               tfs,
                                               sigm=sigm,
                                               save=save,
                                               fn=f'{prefix}_adj.csv')
         elif method == 'hotspot':
-            adjacencies = self.hotspot_matrix(self.data, tf_list=tfs, jobs=num_workers)
+            adjacencies = self.hotspot_matrix(self.data,
+                                              tf_list=tfs,
+                                              jobs=num_workers,
+                                              layer_key=layers,
+                                              model=model,
+                                              latent_obsm_key=latent_obsm_key,
+                                              umi_counts_obs_key=umi_counts_obs_key,
+                                              fn=f'{prefix}_adj.csv')
 
         modules = self.get_modules(adjacencies, df)
 
@@ -928,9 +1006,14 @@ class InferenceRegulatoryNetwork:
                                              save=save,
                                              cache=cache,
                                              fn=f'{prefix}_auc.csv')
+        logger.info('auc calculation DONE')
+
+        self.cal_regulon_score(cluster_label=cluster_label, fn=f'{prefix}_regulon_specificity_scores.txt')
 
         # save results
         if save:
-            self.regulons_to_json(regulons)
-            self.to_loom(df, auc_matrix, regulons)
+            logger.info('saving results...')
+            self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
+            self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
             # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
+            logger.info('results saving DONE')

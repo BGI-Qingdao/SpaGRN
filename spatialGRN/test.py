@@ -78,12 +78,11 @@ if __name__ == '__main__':
              method=method,
              prefix=prefix)
 
-    grn_plot.auc_heatmap(grn.auc_mtx, fn=f'{method}_auc_heatmap.png')
+    grn_plot.auc_heatmap(grn.auc_mtx, fn=f'{prefix}_auc_heatmap.png')
     # grn.main(database_fn, motif_anno_fn, tfs_fn, num_workers=cpu_count(), cache=False, save=True, method='hotspot', prefix='hotspot')
     # grn_plot.auc_heatmap(grn.auc_mtx, fn='hotspot_auc_heatmap.png')
     # grn.main(database_fn, motif_anno_fn, tfs_fn, num_workers=cpu_count(), cache=False, save=True, method='scoexp', prefix='scoexp')
     # grn_plot.auc_heatmap(grn.auc_mtx, fn='scoexp_auc_heatmap.png')
-
 
     #grn_plot.dotplot_anndata(data, grn.gene_names, cluster_label='psuedo_class')
     #grn_plot.plot_2d_reg_h5ad(data, 'spatial', grn.auc_mtx, 'Zfp354c')
