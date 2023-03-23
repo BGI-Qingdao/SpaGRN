@@ -209,23 +209,6 @@ class PlotRegulatoryNetwork:
         return g
 
     @staticmethod
-    def auc_heatmap(auc_mtx: pd.DataFrame, width=8, height=8, fn='auc_heatmap.png', **kwargs):
-        """
-        Plot heatmap for auc value for regulons
-        :param height:
-        :param width:
-        :param auc_mtx:
-        :param fn:
-        :return:
-        """
-        if 'Cell' in auc_mtx.columns:
-            auc_mtx = auc_mtx.set_index('Cell')
-        plt.figsize = (width, height)
-        sns.clustermap(auc_mtx, **kwargs)
-        plt.tight_layout()
-        plt.savefig(fn)
-
-    @staticmethod
     def plot_2d_reg_stereo(data: StereoExpData, auc_mtx, reg_name: str, **kwargs):
         """
         Plot genes of one regulon on a 2D map
