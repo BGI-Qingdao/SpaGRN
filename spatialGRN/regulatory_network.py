@@ -196,15 +196,13 @@ class InferenceRegulatoryNetwork:
 
         # other settings
         self._params = {'hotspot': {
-            'num_workers': None,
             'rank_threshold': 1500,
             'prune_auc_threshold': 0.07,
             'nes_threshold': 3.0,
-            'motif_similarity_fdr': 0.1,
+            'motif_similarity_fdr': 0.05,
             'auc_threshold': 0.5
         },
             'grnboost': {
-                'num_workers': None,
                 'rank_threshold': 1500,
                 'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
@@ -212,7 +210,6 @@ class InferenceRegulatoryNetwork:
                 'auc_threshold': 0.5
             },
             'scoexp': {
-                'num_workers': None,
                 'rank_threshold': 1500,
                 'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
@@ -464,7 +461,7 @@ class InferenceRegulatoryNetwork:
         return tfs_in_file
 
     @staticmethod
-    def preprocess(adata: anndata.AnnData, min_genes=200, min_cells=3, min_counts=1, max_gene_num=4000,
+    def preprocess(adata: anndata.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000,
                    mt_percent=0.15):
         """
         Perform cleaning and quality control on the imported data before constructing gene regulatory network
@@ -667,8 +664,8 @@ class InferenceRegulatoryNetwork:
     # ------------------------------------------------------#
     #           step2:               #
     # ------------------------------------------------------#
-    def get_modules(self,
-                    adjacencies: pd.DataFrame,
+    @staticmethod
+    def get_modules(adjacencies: pd.DataFrame,
                     matrix,
                     rho_mask_dropouts: bool = False,
                     **kwargs):
@@ -686,6 +683,7 @@ class InferenceRegulatoryNetwork:
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
         )
+        logger.info(f'generated {len(modules)} modules')
         return modules
 
     def prune_modules(self,
@@ -798,6 +796,11 @@ class InferenceRegulatoryNetwork:
             num_workers = cpu_count()
 
         auc_mtx = aucell(matrix, regulons, auc_threshold=auc_threshold, num_workers=num_workers, **kwargs)
+        # check if there were regulons contain all zero auc values
+        if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
+            logger.warning('auc matrix contains all zero columns')
+        auc_mtx = auc_mtx.loc[:, ~auc_mtx.ne(0).any()]
+        
         self.auc_mtx = auc_mtx
 
         if save:
