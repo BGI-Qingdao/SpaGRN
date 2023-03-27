@@ -948,6 +948,8 @@ class InferenceRegulatoryNetwork:
         :param latent_obsm_key:
         :param umi_counts_obs_key:
         :param cluster_label:
+        :param noweights:
+        :param normalize:
         :return:
         """
         assert method in ['grnboost', 'hotspot', 'scoexp'], "method options are grnboost/hotspot/scoexp"
