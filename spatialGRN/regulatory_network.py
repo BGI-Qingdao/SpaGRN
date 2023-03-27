@@ -195,26 +195,30 @@ class InferenceRegulatoryNetwork:
         self._rss = None  # pd.DataFrame
 
         # other settings
-        self._params = {'hotspot': {
-            'rank_threshold': 1500,
-            'prune_auc_threshold': 0.07,
-            'nes_threshold': 3.0,
-            'motif_similarity_fdr': 0.05,
-            'auc_threshold': 0.5
-        },
+        self._params = {
+             'hotspot': {
+                'rank_threshold': 1500,
+                'prune_auc_threshold': 0.07,
+                'nes_threshold': 3.0,
+                'motif_similarity_fdr': 0.05,
+                'auc_threshold': 0.5,
+                'noweights': False,
+            },
             'grnboost': {
                 'rank_threshold': 1500,
                 'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
                 'motif_similarity_fdr': 0.05,
-                'auc_threshold': 0.5
+                'auc_threshold': 0.5,
+                'noweights': False,
             },
             'scoexp': {
                 'rank_threshold': 1500,
                 'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
                 'motif_similarity_fdr': 0.05,
-                'auc_threshold': 0.5
+                'auc_threshold': 0.5,
+                'noweights': True,
             }}
 
     @property
@@ -929,7 +933,7 @@ class InferenceRegulatoryNetwork:
              umi_counts_obs_key=None,
              cluster_label='annotation',
 
-             noweights: bool = False,
+             noweights = None ,
              normalize: bool = False):
         """
 
@@ -960,6 +964,9 @@ class InferenceRegulatoryNetwork:
 
         if target_genes is None:
             target_genes = self._gene_names
+        
+        if noweights is None:
+            noweights = self.params[method]["noweights"]
 
         # 1. load TF list
         if tfs_fn is None:
