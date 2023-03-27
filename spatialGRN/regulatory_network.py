@@ -762,6 +762,9 @@ class InferenceRegulatoryNetwork:
                            regulons: list,
                            auc_threshold: float,
                            num_workers: int,
+                           noweights: bool = False,
+                           normalize: bool = False,
+                           seed=None,
                            cache: bool = True,
                            save: bool = True,
                            fn='auc.csv',
@@ -795,7 +798,14 @@ class InferenceRegulatoryNetwork:
         if num_workers is None:
             num_workers = cpu_count()
 
-        auc_mtx = aucell(matrix, regulons, auc_threshold=auc_threshold, num_workers=num_workers, **kwargs)
+        auc_mtx = aucell(matrix,
+                         regulons,
+                         auc_threshold=auc_threshold,
+                         num_workers=num_workers,
+                         noweights=noweights,
+                         normalize=normalize,
+                         seed=seed,
+                         **kwargs)
         # check if there were regulons contain all zero auc values
         if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
             logger.warning('auc matrix contains all zero columns')
@@ -917,7 +927,10 @@ class InferenceRegulatoryNetwork:
              model='bernoulli',
              latent_obsm_key='spatial',
              umi_counts_obs_key=None,
-             cluster_label='annotation'):
+             cluster_label='annotation',
+
+             noweights: bool = False,
+             normalize: bool = False):
         """
 
         :param databases:
@@ -1008,6 +1021,8 @@ class InferenceRegulatoryNetwork:
                                              num_workers=num_workers,
                                              save=save,
                                              cache=cache,
+                                             noweights=noweights,
+                                             normalize=normalize,
                                              fn=f'{prefix}_auc.csv')
         logger.info('auc calculation DONE')
 
