@@ -206,7 +206,7 @@ class InferenceRegulatoryNetwork:
             },
             'grnboost': {
                 'rank_threshold': 1500,
-                'prune_auc_threshold': 0.07,
+                'prune_auc_threshold': 0.5,
                 'nes_threshold': 3.0,
                 'motif_similarity_fdr': 0.05,
                 'auc_threshold': 0.5,
@@ -637,7 +637,6 @@ class InferenceRegulatoryNetwork:
             common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
             logger.info(f'detected {len(common_tf_list)} predefined TF in data')
             assert len(common_tf_list) > 0, 'predefined TFs not found in data'
-            # local_correlations = local_correlations[common_tf_list]
         else:
             common_tf_list = local_correlations.columns
 

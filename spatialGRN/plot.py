@@ -21,8 +21,10 @@ import pandas as pd
 import numpy as np
 import scanpy as sc
 import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from pyscenic.cli.utils import load_signatures
+from pyscenic.export import add_scenic_metadata
 from pyscenic.rss import regulon_specificity_scores
 from stereo.core.stereo_exp_data import StereoExpData
 
@@ -226,7 +228,8 @@ class PlotRegulatoryNetwork:
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
         zorder = np.argsort(sub_zscore.values)
         # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.', edgecolors='none', cmap='plasma', lw=0, **kwargs)
+        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.',
+                         edgecolors='none', cmap='plasma', lw=0, **kwargs)
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
@@ -255,7 +258,8 @@ class PlotRegulatoryNetwork:
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
         zorder = np.argsort(sub_zscore.values)
         # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.', edgecolors='none', cmap='plasma', lw=0, **kwargs)
+        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.',
+                         edgecolors='none', cmap='plasma', lw=0, **kwargs)
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
@@ -264,45 +268,61 @@ class PlotRegulatoryNetwork:
 
     @staticmethod
     def rss_heatmap(data: anndata.AnnData,
+                    regulons_fn,
                     auc_mtx: pd.DataFrame,
-                    meta: pd.DataFrame,
-                    regulons: list,
+                    cluster_label: str,
+                    topn=5,
                     save=True,
-                    fn='clusters-heatmap-top5.png',
-                    **kwargs):
+                    fn='clusters_heatmap_top5.png'):
         """
         Plot heatmap for Regulon specificity scores (RSS) value
         :param data: 
         :param auc_mtx: 
-        :param regulons:
-        :param meta:
+        :param regulons_fn:
+        :param cluster_label:
+        :param topn:
         :param save:
         :param fn:
-        :return: 
+        :return:
         """
-        meta = pd.read_csv('meta_mousebrain.csv', index_col=0).iloc[:, 0]
-
         # load the regulon_list from a file using the load_signatures function
-        # regulons = load_signatures(regulons_fn)  # regulons_df -> list of regulon_list
-        # data = add_scenic_metadata(data, auc_mtx, regulons)
+        regulons = load_signatures(regulons_fn)  # regulons_df -> list of regulon_list
+        data = add_scenic_metadata(data, auc_mtx, regulons)
 
         # Regulon specificity scores (RSS) across predicted cell types
-        rss_cellType = regulon_specificity_scores(auc_mtx, meta)
+        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
         rss_cellType.to_csv('regulon_specificity_scores.txt')
         # Select the top 5 regulon_list from each cell type
-        cats = sorted(list(set(meta)))
+        cats = sorted(list(set(data.obs[cluster_label])))
         topreg = []
         for i, c in enumerate(cats):
             topreg.extend(
-                list(rss_cellType.T[c].sort_values(ascending=False)[:5].index)
+                list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
             )
         topreg = list(set(topreg))
+
+        colors = [
+            '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
+            '#6b004f', '#573b00', '#005659', '#5e7b87', '#0000dd', '#00acc6',
+            '#bcb6ff', '#bf03b8', '#645472', '#790000', '#0774d8', '#729a7c',
+            '#8287ff', '#ff7ed1', '#8e7b01', '#9e4b00', '#8eba00', '#a57bb8',
+            '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
+            '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
+        ]
+        colorsd = dict((f'c{i}', c) for i, c in enumerate(colors))
+        colormap = [colorsd[x] for x in data.obs[cluster_label]]
+
+        # plot legend
+        sns.set()
+        sns.set(font_scale=0.8)
+        fig = palplot(colors, cats, size=1)
+        plt.savefig("hood_inte.seurat_clusters-heatmap-legend-top5.pdf", dpi=600, bbox_inches="tight")
 
         # plot z-score
         auc_zscore = cal_zscore(auc_mtx)
         sns.set(font_scale=1.2)
         g = sns.clustermap(auc_zscore[topreg], annot=False, square=False, linecolor='gray', yticklabels=True,
-                           xticklabels=True, vmin=-2, vmax=6, cmap="YlGnBu", figsize=(21, 16), **kwargs)
+                           xticklabels=True, vmin=-2, vmax=6, cmap="YlGnBu", figsize=(21, 16), row_colors=colormap)
         g.cax.set_visible(True)
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
@@ -332,3 +352,18 @@ def is_regulon_name(reg):
     if '(+)' in reg or '(-)' in reg:
         return True
 
+
+# Generate a heatmap
+def palplot(pal, names, colors=None, size=1):
+    n = len(pal)
+    f, ax = plt.subplots(1, 1, figsize=(n * size, size))
+    ax.imshow(np.arange(n).reshape(1, n), cmap=mpl.colors.ListedColormap(list(pal)), interpolation="nearest",
+              aspect="auto")
+    ax.set_xticks(np.arange(n) - .5)
+    ax.set_yticks([-.5, .5])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    colors = n * ['k'] if colors is None else colors
+    for idx, (name, color) in enumerate(zip(names, colors)):
+        ax.text(0.0 + idx, 0.0, name, color=color, horizontalalignment='center', verticalalignment='center')
+    return f
