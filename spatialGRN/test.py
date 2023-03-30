@@ -32,6 +32,8 @@ if __name__ == '__main__':
     database_fn = args.database
     motif_anno_fn = args.motif_anno
     out_dir = args.output
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
     method = args.method
     prefix = os.path.join(out_dir, method)
 
