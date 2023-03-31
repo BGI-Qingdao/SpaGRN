@@ -465,8 +465,7 @@ class InferenceRegulatoryNetwork:
         return tfs_in_file
 
     @staticmethod
-    def preprocess(adata: anndata.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000,
-                   mt_percent=0.15):
+    def preprocess(adata: anndata.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000):
         """
         Perform cleaning and quality control on the imported data before constructing gene regulatory network
         :param adata:
@@ -474,16 +473,11 @@ class InferenceRegulatoryNetwork:
         :param min_cells:
         :param min_counts:
         :param max_gene_num:
-        :param mt_percent:
         :return: a anndata.AnnData
         """
         adata.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
-        # find mito genes
-        sc.pp.ﬁlter_cells(adata, min_genes=0)
-        # mito and genes/counts cuts
-        mito_genes = adata.var_names.str.startswith('MT-')
-        # for each cell compute fraction of counts in mito genes vs. all genes
-        adata.obs['percent_mito'] = np.ravel(np.sum(adata[:, mito_genes].X, axis=1)) / np.ravel(np.sum(adata.X, axis=1))
+        # # find mito genes
+        # sc.pp.ﬁlter_cells(adata, min_genes=0)
         # add the total counts per cell as observations-annotation to adata
         adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
 
@@ -491,8 +485,8 @@ class InferenceRegulatoryNetwork:
         # ﬁltering with basic thresholds for genes and cells
         sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
         sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
+        sc.pp.ﬁlter_genes(adata, min_counts=min_counts)
         adata = adata[adata.obs['n_genes'] < max_gene_num, :]
-        adata = adata[adata.obs['percent_mito'] < mt_percent, :]
         return adata
 
     # ------------------------------------------------------#
@@ -834,16 +828,21 @@ class InferenceRegulatoryNetwork:
         self.rss = rss_cellType
         return rss_cellType
 
-    def get_top_regulon(self, celltype, topn=5):
+    @staticmethod
+    def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_cellType: pd.DataFrame, topn: int) -> list:
         """
-
-        :param celltype:
+        get top n regulons for each cell type based on regulon specificity scores (rss)
+        :param data:
+        :param cluster_label:
+        :param rss_cellType:
         :param topn:
-        :return:
+        :return: a list
         """
-        topreg = []
-        topreg.extend(list(self.rss.T[celltype].sort_values(ascending=False)[:topn].index))
-        topreg = list(set(topreg))
+        # Select the top 5 regulon_list from each cell type
+        cats = sorted(list(set(data.obs[cluster_label])))
+        topreg = {}
+        for i, c in enumerate(cats):
+            topreg[c] = list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
         return topreg
 
     # ------------------------------------------------------#
