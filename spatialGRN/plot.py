@@ -38,11 +38,21 @@ class PlotRegulatoryNetwork:
     Plot Gene Regulatory Networks related plots
     """
 
-    def __init__(self, data):
+    def __init__(self, data, cluster_label='annotation'):
         self._data = data
         self._regulon_list = None
         self._auc_mtx = None
         self._regulon_dict = None
+
+        self._celltype_colors = [
+            '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
+            '#6b004f', '#573b00', '#005659', '#5e7b87', '#0000dd', '#00acc6',
+            '#bcb6ff', '#bf03b8', '#645472', '#790000', '#0774d8', '#729a7c',
+            '#8287ff', '#ff7ed1', '#8e7b01', '#9e4b00', '#8eba00', '#a57bb8',
+            '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
+            '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
+        ]
+        self._cluster_label = cluster_label
 
     @property
     def data(self):
@@ -75,6 +85,30 @@ class PlotRegulatoryNetwork:
     @auc_mtx.setter
     def auc_mtx(self, value):
         self._auc_mtx = value
+
+    @property
+    def celltype_colors(self):
+        return self._celltype_colors
+
+    @celltype_colors.setter
+    def celltype_colors(self, value):
+        self._celltype_colors = value
+
+    @property
+    def cluster_label(self):
+        return self._cluster_label
+
+    @cluster_label.setter
+    def cluster_label(self, value):
+        self._cluster_label = value
+
+    def add_color(self, value):
+        if isinstance(value, list):
+            self._celltype_colors.extend(value)
+        elif isinstance(value, str):
+            self._celltype_colors.append(value)
+        else:
+            logger.error('new color should be either a string or a list of strings')
 
     # dotplot method for anndata
     @staticmethod
@@ -237,13 +271,14 @@ class PlotRegulatoryNetwork:
         plt.close()
 
     @staticmethod
-    def plot_2d_reg_h5ad(data: anndata.AnnData, pos_label, auc_mtx, reg_name: str, **kwargs):
+    def plot_2d_reg_h5ad(data: anndata.AnnData, pos_label, auc_mtx, reg_name: str, fn: str, **kwargs):
         """
         Plot genes of one regulon on a 2D map
         :param pos_label:
         :param data:
         :param auc_mtx:
         :param reg_name:
+        :param fn:
         :return:
 
         Example:
@@ -251,19 +286,31 @@ class PlotRegulatoryNetwork:
         """
         if '(+)' not in reg_name:
             reg_name = reg_name + '(+)'
-        cell_coor = data.obsm[pos_label]
+        if fn is None:
+            rn = reg_name.replace("(", "_")
+            rn = rn.replace(')', '_')
+            fn = f'{rn}.png'
+
+        #cell_coor = data.obsm[pos_label]
+        cell_coor = pd.concat([data.obs['new_x'], data.obs['new_y'], data.obs['new_z']], axis=1)
+        cell_coor = cell_coor.to_numpy()
         auc_zscore = cal_zscore(auc_mtx)
         # prepare plotting data
         sub_zscore = auc_zscore[reg_name]
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
         zorder = np.argsort(sub_zscore.values)
+        #sorted_zscore = sub_zscore.sort_values()
         # plot cell/bin dot, x y coor
         sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.',
                          edgecolors='none', cmap='plasma', lw=0, **kwargs)
+
+        #plot_data = cell_coor.loc[sorted_zscore.index]
+        #sc = plt.scatter(plot_data.new_x, plot_data.new_y, c=sorted_zscore, marker='.',
+        #                 edgecolors='none', cmap='plasma', lw=0, **kwargs)
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
-        plt.savefig(f'{reg_name.split("(")[0]}.png')
+        plt.savefig(fn)
         plt.close()
 
     @staticmethod
@@ -286,20 +333,15 @@ class PlotRegulatoryNetwork:
         :return:
         """
         # load the regulon_list from a file using the load_signatures function
-        regulons = load_signatures(regulons_fn)  # regulons_df -> list of regulon_list
-        data = add_scenic_metadata(data, auc_mtx, regulons)
+        cell_num = len(data.obs_names)
+        cell_order = data.obs[cluster_label].sort_values()
+        celltypes = sorted(list(set(data.obs[cluster_label])))
 
         # Regulon specificity scores (RSS) across predicted cell types
-        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
-        rss_cellType.to_csv('regulon_specificity_scores.txt')
+        rss_cellType = pd.read_csv('regulon_specificity_scores.txt', index_col=0)
         # Select the top 5 regulon_list from each cell type
-        cats = sorted(list(set(data.obs[cluster_label])))
-        topreg = []
-        for i, c in enumerate(cats):
-            topreg.extend(
-                list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
-            )
-        topreg = list(set(topreg))
+        topreg = PlotRegulatoryNetwork.get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
+
 
         colors = [
             '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
@@ -309,26 +351,64 @@ class PlotRegulatoryNetwork:
             '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
             '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
         ]
-        colorsd = dict((f'c{i}', c) for i, c in enumerate(colors))
-        colormap = [colorsd[x] for x in data.obs[cluster_label]]
+        colorsd = dict((i, c) for i, c in zip(set(data.obs[cluster_label]), colors))
+        colormap = [colorsd[x] for x in cell_order]
+        #colormap = PlotRegulatoryNetwork.map_celltype_colors(data, colors, celltypes, cluster_label)
 
         # plot legend
         sns.set()
         sns.set(font_scale=0.8)
-        fig = palplot(colors, cats, size=1)
-        plt.savefig("hood_inte.seurat_clusters-heatmap-legend-top5.pdf", dpi=600, bbox_inches="tight")
+        palplot(list(colorsd.values()), celltypes, size=1)  # TODO: order!
+        plt.savefig("rss_celltype_legend_top5.png", bbox_inches="tight")
+        plt.close()
 
         # plot z-score
         auc_zscore = cal_zscore(auc_mtx)
+        plot_data = auc_zscore[topreg].loc[cell_order.index]
         sns.set(font_scale=1.2)
-        g = sns.clustermap(auc_zscore[topreg], annot=False, square=False, linecolor='gray', yticklabels=True,
-                           xticklabels=True, vmin=-2, vmax=6, cmap="YlGnBu", figsize=(21, 16), row_colors=colormap)
+        g = sns.clustermap(plot_data, annot=False, square=False, linecolor='gray', yticklabels=True,
+                           xticklabels=True, vmin=-2, vmax=6, cmap="YlGnBu", figsize=(21, 16), row_colors=colormap,
+                           row_cluster=False, col_cluster=True)
         g.cax.set_visible(True)
+        plt.yticks(np.arange(0, rss_cellType.shape[0] + 1, 20))
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
         if save:
             plt.savefig(fn)
         return g
+
+    @staticmethod
+    def map_celltype_colors(data, celltype_colors:list, celltypes: list, cluster_label: str):
+        """
+
+        :param celltypes: list of cell types in data
+        :param cluster_label:
+        :return:
+        """
+        assert len(celltype_colors) >= len(celltypes)
+        colorsd = dict((i, c) for i, c in zip(celltypes, celltype_colors))
+        colormap = [colorsd[x] for x in data.obs[cluster_label]]
+        return colormap
+
+    @staticmethod
+    def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_cellType: pd.DataFrame, topn: int) -> list:
+        """
+        get top n regulons for each cell type based on regulon specificity scores (rss)
+        :param data:
+        :param cluster_label:
+        :param rss_cellType:
+        :param topn:
+        :return: a list
+        """
+        # Select the top 5 regulon_list from each cell type
+        cats = sorted(list(set(data.obs[cluster_label])))
+        topreg = []
+        for i, c in enumerate(cats):
+            topreg.extend(
+                list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
+            )
+        topreg = list(set(topreg))
+        return topreg
 
 
 def cal_zscore(auc_mtx: pd.DataFrame) -> pd.DataFrame:
