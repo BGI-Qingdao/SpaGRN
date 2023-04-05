@@ -905,7 +905,10 @@ class InferenceRegulatoryNetwork:
             grn.to_cytoscape(regulons, adjacencies, 'Gnb4', 'Gnb4_cytoscape.txt')
         """
         # get TF data
-        regulon_dict = self.get_regulon_dict(regulons)
+        if isinstance(regulons, list):
+            regulon_dict = self.get_regulon_dict(regulons)
+        else:
+            regulon_dict = regulons
         sub_adj = adjacencies[adjacencies.TF == tf]
         targets = regulon_dict[f'{tf}(+)']
         # all the target genes of the TF
