@@ -291,7 +291,7 @@ class PlotRegulatoryNetwork:
             rn = rn.replace(')', '_')
             fn = f'{rn}.png'
 
-        #cell_coor = data.obsm[pos_label]
+        # cell_coor = data.obsm[pos_label]
         cell_coor = pd.concat([data.obs['new_x'], data.obs['new_y'], data.obs['new_z']], axis=1)
         cell_coor = cell_coor.to_numpy()
         auc_zscore = cal_zscore(auc_mtx)
@@ -299,14 +299,74 @@ class PlotRegulatoryNetwork:
         sub_zscore = auc_zscore[reg_name]
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
         zorder = np.argsort(sub_zscore.values)
-        #sorted_zscore = sub_zscore.sort_values()
+        # sorted_zscore = sub_zscore.sort_values()
         # plot cell/bin dot, x y coor
         sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.',
                          edgecolors='none', cmap='plasma', lw=0, **kwargs)
 
-        #plot_data = cell_coor.loc[sorted_zscore.index]
-        #sc = plt.scatter(plot_data.new_x, plot_data.new_y, c=sorted_zscore, marker='.',
+        # plot_data = cell_coor.loc[sorted_zscore.index]
+        # sc = plt.scatter(plot_data.new_x, plot_data.new_y, c=sorted_zscore, marker='.',
         #                 edgecolors='none', cmap='plasma', lw=0, **kwargs)
+        plt.box(False)
+        plt.axis('off')
+        plt.colorbar(sc, shrink=0.35)
+        plt.savefig(fn)
+        plt.close()
+
+    @staticmethod
+    def plot_3d_reg_h5ad(data: anndata.AnnData, pos_label, auc_mtx, reg_name: str, fn: str, **kwargs):
+        """
+        Plot genes of one regulon on a 2D map
+        :param pos_label:
+        :param data:
+        :param auc_mtx:
+        :param reg_name:
+        :param fn:
+        :return:
+
+        Example:
+            plot_3d_reg_h5ad(data, 'spatial', auc_mtx, 'Zfp354c')
+        """
+        if '(+)' not in reg_name:
+            reg_name = reg_name + '(+)'
+        if fn is None:
+            rn = reg_name.replace("(", "_")
+            rn = rn.replace(')', '_')
+            fn = f'{rn}.png'
+
+        cell_coor = data.obsm[pos_label]
+        auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
+        # prepare plotting data
+        sub_zscore = auc_zscore[reg_name]
+        # sort data points by zscore (low to high), because first dot will be covered by latter dots
+        zorder = np.argsort(sub_zscore.values)
+        # sorted_zscore = sub_zscore.sort_values()
+        # plot cell/bin dot, x y, z coor
+
+        # ax = plt.figure().add_subplot(projection='3d')
+        # ax.view_init(elev=-120, azim=-20)
+
+        from mpl_toolkits.mplot3d import Axes3D
+        fig = plt.figure()
+        ax = Axes3D(fig)
+        sc = ax.scatter(cell_coor[:, 0],
+                        cell_coor[:, 1],
+                        cell_coor[:, 2],
+                        c=sub_zscore,
+                        marker='.',
+                        edgecolors='none',
+                        cmap='plasma',
+                        lw=0, **kwargs)
+        # set view angle
+        ax.view_init(222, -80)
+        # 前3个参数用来调整各坐标轴的缩放比例
+        xlen = cell_coor[:, 0].max() - cell_coor[:, 0].min()
+        ylen = cell_coor[:, 1].max() - cell_coor[:, 1].min()
+        zlen = cell_coor[:, 2].max() - cell_coor[:, 2].min()
+        yscale = ylen / xlen
+        zscale = zlen / xlen
+        ax.get_proj = lambda: np.dot(Axes3D.get_proj(ax), np.diag([1, yscale, zscale, 1]))
+
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
@@ -342,7 +402,6 @@ class PlotRegulatoryNetwork:
         # Select the top 5 regulon_list from each cell type
         topreg = PlotRegulatoryNetwork.get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
 
-
         colors = [
             '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
             '#6b004f', '#573b00', '#005659', '#5e7b87', '#0000dd', '#00acc6',
@@ -351,23 +410,23 @@ class PlotRegulatoryNetwork:
             '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
             '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
         ]
-        colorsd = dict((i, c) for i, c in zip(set(data.obs[cluster_label]), colors))
+        colorsd = dict((i, c) for i, c in zip(celltypes, colors))
         colormap = [colorsd[x] for x in cell_order]
-        #colormap = PlotRegulatoryNetwork.map_celltype_colors(data, colors, celltypes, cluster_label)
+        # colormap = PlotRegulatoryNetwork.map_celltype_colors(data, colors, celltypes, cluster_label)
 
         # plot legend
         sns.set()
         sns.set(font_scale=0.8)
-        palplot(list(colorsd.values()), celltypes, size=1)  # TODO: order!
+        palplot(colors[:len(celltypes)], celltypes, size=1)
         plt.savefig("rss_celltype_legend_top5.png", bbox_inches="tight")
         plt.close()
 
         # plot z-score
-        auc_zscore = cal_zscore(auc_mtx)
+        auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
         plot_data = auc_zscore[topreg].loc[cell_order.index]
         sns.set(font_scale=1.2)
         g = sns.clustermap(plot_data, annot=False, square=False, linecolor='gray', yticklabels=True,
-                           xticklabels=True, vmin=-2, vmax=6, cmap="YlGnBu", figsize=(21, 16), row_colors=colormap,
+                           xticklabels=True, vmin=-3, vmax=3, cmap="YlGnBu", row_colors=colormap,
                            row_cluster=False, col_cluster=True)
         g.cax.set_visible(True)
         plt.yticks(np.arange(0, rss_cellType.shape[0] + 1, 20))
@@ -378,7 +437,7 @@ class PlotRegulatoryNetwork:
         return g
 
     @staticmethod
-    def map_celltype_colors(data, celltype_colors:list, celltypes: list, cluster_label: str):
+    def map_celltype_colors(data, celltype_colors: list, celltypes: list, cluster_label: str):
         """
 
         :param celltypes: list of cell types in data
@@ -410,17 +469,17 @@ class PlotRegulatoryNetwork:
         topreg = list(set(topreg))
         return topreg
 
-
-def cal_zscore(auc_mtx: pd.DataFrame) -> pd.DataFrame:
-    """
-    calculate z-score for each gene among cells
-    :param auc_mtx:
-    :return:
-    """
-    func = lambda x: (x - x.mean()) / x.std(ddof=0)
-    auc_zscore = auc_mtx.transform(func, axis=0)
-    auc_zscore.to_csv('auc_zscore.csv', index=False)
-    return auc_zscore
+    @staticmethod
+    def cal_zscore(auc_mtx: pd.DataFrame) -> pd.DataFrame:
+        """
+        calculate z-score for each gene among cells
+        :param auc_mtx:
+        :return:
+        """
+        func = lambda x: (x - x.mean()) / x.std(ddof=0)
+        auc_zscore = auc_mtx.transform(func, axis=0)
+        auc_zscore.to_csv('auc_zscore.csv', index=False)
+        return auc_zscore
 
 
 def is_regulon_name(reg):
