@@ -15,6 +15,8 @@ change log:
 # python core modules
 
 # third party modules
+from typing import Union
+
 import anndata
 import logging
 import pandas as pd
@@ -245,6 +247,31 @@ class PlotRegulatoryNetwork:
         return g
 
     @staticmethod
+    def plot_2d_reg(data: Union[StereoExpData, anndata.AnnData],
+                    auc_mtx: pd.DataFrame,
+                    reg_name: str,
+                    pos_label=None,
+                    fn=None,
+                    **kwargs):
+        """
+        
+        :param data:
+        :param auc_mtx:
+        :param reg_name:
+        :param pos_label:
+        :param fn:
+        :param kwargs:
+        :return:
+        """
+        if isinstance(data, anndata.AnnData):
+            if pos_label is not None:
+                PlotRegulatoryNetwork.plot_2d_reg_h5ad(data, pos_label, auc_mtx, reg_name, fn=fn, **kwargs)
+            else:
+                pass
+        elif isinstance(data, StereoExpData):
+            PlotRegulatoryNetwork.plot_2d_reg_stereo(data, auc_mtx, reg_name, fn=fn, **kwargs)
+
+    @staticmethod
     def plot_2d_reg_stereo(data: StereoExpData, auc_mtx, reg_name: str, **kwargs):
         """
         Plot genes of one regulon on a 2D map
@@ -256,14 +283,20 @@ class PlotRegulatoryNetwork:
         if '(+)' not in reg_name:
             reg_name = reg_name + '(+)'
         cell_coor = data.position
-        auc_zscore = cal_zscore(auc_mtx)
+        auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
         # prepare plotting data
         sub_zscore = auc_zscore[reg_name]
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
         zorder = np.argsort(sub_zscore.values)
         # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.',
-                         edgecolors='none', cmap='plasma', lw=0, **kwargs)
+        sc = plt.scatter(cell_coor[:, 0][zorder],
+                         cell_coor[:, 1][zorder],
+                         c=sub_zscore.iloc[zorder],
+                         marker='.',
+                         edgecolors='none',
+                         cmap='plasma',
+                         lw=0,
+                         **kwargs)
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
@@ -287,52 +320,7 @@ class PlotRegulatoryNetwork:
         if '(+)' not in reg_name:
             reg_name = reg_name + '(+)'
         if fn is None:
-            rn = reg_name.replace("(", "_")
-            rn = rn.replace(')', '_')
-            fn = f'{rn}.png'
-
-        # cell_coor = data.obsm[pos_label]
-        cell_coor = pd.concat([data.obs['new_x'], data.obs['new_y'], data.obs['new_z']], axis=1)
-        cell_coor = cell_coor.to_numpy()
-        auc_zscore = cal_zscore(auc_mtx)
-        # prepare plotting data
-        sub_zscore = auc_zscore[reg_name]
-        # sort data points by zscore (low to high), because first dot will be covered by latter dots
-        zorder = np.argsort(sub_zscore.values)
-        # sorted_zscore = sub_zscore.sort_values()
-        # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder], cell_coor[:, 1][zorder], c=sub_zscore.iloc[zorder], marker='.',
-                         edgecolors='none', cmap='plasma', lw=0, **kwargs)
-
-        # plot_data = cell_coor.loc[sorted_zscore.index]
-        # sc = plt.scatter(plot_data.new_x, plot_data.new_y, c=sorted_zscore, marker='.',
-        #                 edgecolors='none', cmap='plasma', lw=0, **kwargs)
-        plt.box(False)
-        plt.axis('off')
-        plt.colorbar(sc, shrink=0.35)
-        plt.savefig(fn)
-        plt.close()
-
-    @staticmethod
-    def plot_3d_reg_h5ad(data: anndata.AnnData, pos_label, auc_mtx, reg_name: str, fn: str, **kwargs):
-        """
-        Plot genes of one regulon on a 2D map
-        :param pos_label:
-        :param data:
-        :param auc_mtx:
-        :param reg_name:
-        :param fn:
-        :return:
-
-        Example:
-            plot_3d_reg_h5ad(data, 'spatial', auc_mtx, 'Zfp354c')
-        """
-        if '(+)' not in reg_name:
-            reg_name = reg_name + '(+)'
-        if fn is None:
-            rn = reg_name.replace("(", "_")
-            rn = rn.replace(')', '_')
-            fn = f'{rn}.png'
+            fn = f'{reg_name.strip("(+)")}.png'
 
         cell_coor = data.obsm[pos_label]
         auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
@@ -340,11 +328,53 @@ class PlotRegulatoryNetwork:
         sub_zscore = auc_zscore[reg_name]
         # sort data points by zscore (low to high), because first dot will be covered by latter dots
         zorder = np.argsort(sub_zscore.values)
-        # sorted_zscore = sub_zscore.sort_values()
-        # plot cell/bin dot, x y, z coor
+        # plot cell/bin dot, x y coor
+        sc = plt.scatter(cell_coor[:, 0][zorder],
+                         cell_coor[:, 1][zorder],
+                         c=sub_zscore.iloc[zorder],
+                         marker='.',
+                         edgecolors='none',
+                         cmap='plasma',
+                         lw=0,
+                         **kwargs)
+        plt.box(False)
+        plt.axis('off')
+        plt.colorbar(sc, shrink=0.35)
+        plt.savefig(fn)
+        plt.close()
 
-        # ax = plt.figure().add_subplot(projection='3d')
-        # ax.view_init(elev=-120, azim=-20)
+    @staticmethod
+    def plot_3d_reg(data: anndata.AnnData,
+                    pos_label,
+                    auc_mtx,
+                    reg_name: str,
+                    fn: str,
+                    view_vertical: 222,
+                    view_horizontal: -80,
+                    **kwargs):
+        """
+        Plot genes of one regulon on a 3D map
+        :param pos_label:
+        :param data:
+        :param auc_mtx:
+        :param reg_name:
+        :param fn:
+        :param view_vertical: vertical angle to view to the 3D object
+        :param view_horizontal: horizontal angle to view the 3D object
+        :return:
+
+        Example:
+            plot_3d_reg(data, 'spatial', auc_mtx, 'Zfp354c')
+        """
+        if '(+)' not in reg_name:
+            reg_name = reg_name + '(+)'
+        if fn is None:
+            fn = f'{reg_name.strip("(+)")}.png'
+
+        # prepare plotting data
+        cell_coor = data.obsm[pos_label]
+        auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
+        sub_zscore = auc_zscore[reg_name]
 
         from mpl_toolkits.mplot3d import Axes3D
         fig = plt.figure()
@@ -358,8 +388,8 @@ class PlotRegulatoryNetwork:
                         cmap='plasma',
                         lw=0, **kwargs)
         # set view angle
-        ax.view_init(222, -80)
-        # 前3个参数用来调整各坐标轴的缩放比例
+        ax.view_init(view_vertical, view_horizontal)
+        # scale axis
         xlen = cell_coor[:, 0].max() - cell_coor[:, 0].min()
         ylen = cell_coor[:, 1].max() - cell_coor[:, 1].min()
         zlen = cell_coor[:, 2].max() - cell_coor[:, 2].min()
@@ -378,6 +408,7 @@ class PlotRegulatoryNetwork:
                     regulons_fn,
                     auc_mtx: pd.DataFrame,
                     cluster_label: str,
+                    rss_fn: str = 'regulon_specificity_scores.txt',
                     topn=5,
                     save=True,
                     fn='clusters_heatmap_top5.png'):
@@ -387,18 +418,18 @@ class PlotRegulatoryNetwork:
         :param auc_mtx: 
         :param regulons_fn:
         :param cluster_label:
+        :param rss_fn:
         :param topn:
         :param save:
         :param fn:
         :return:
         """
         # load the regulon_list from a file using the load_signatures function
-        cell_num = len(data.obs_names)
         cell_order = data.obs[cluster_label].sort_values()
         celltypes = sorted(list(set(data.obs[cluster_label])))
 
         # Regulon specificity scores (RSS) across predicted cell types
-        rss_cellType = pd.read_csv('regulon_specificity_scores.txt', index_col=0)
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
         # Select the top 5 regulon_list from each cell type
         topreg = PlotRegulatoryNetwork.get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
 
@@ -412,7 +443,6 @@ class PlotRegulatoryNetwork:
         ]
         colorsd = dict((i, c) for i, c in zip(celltypes, colors))
         colormap = [colorsd[x] for x in cell_order]
-        # colormap = PlotRegulatoryNetwork.map_celltype_colors(data, colors, celltypes, cluster_label)
 
         # plot legend
         sns.set()
@@ -425,8 +455,14 @@ class PlotRegulatoryNetwork:
         auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
         plot_data = auc_zscore[topreg].loc[cell_order.index]
         sns.set(font_scale=1.2)
-        g = sns.clustermap(plot_data, annot=False, square=False, linecolor='gray', yticklabels=True,
-                           xticklabels=True, vmin=-3, vmax=3, cmap="YlGnBu", row_colors=colormap,
+        g = sns.clustermap(plot_data,
+                           annot=False,
+                           square=False,
+                           linecolor='gray',
+                           yticklabels=True, xticklabels=True,
+                           vmin=-3, vmax=3,
+                           cmap="YlGnBu",
+                           row_colors=colormap,
                            row_cluster=False, col_cluster=True)
         g.cax.set_visible(True)
         plt.yticks(np.arange(0, rss_cellType.shape[0] + 1, 20))
@@ -440,22 +476,24 @@ class PlotRegulatoryNetwork:
     def map_celltype_colors(data, celltype_colors: list, celltypes: list, cluster_label: str):
         """
 
-        :param celltypes: list of cell types in data
+        :param data:
+        :param celltype_colors:
+        :param celltypes:
         :param cluster_label:
         :return:
         """
         assert len(celltype_colors) >= len(celltypes)
         colorsd = dict((i, c) for i, c in zip(celltypes, celltype_colors))
         colormap = [colorsd[x] for x in data.obs[cluster_label]]
-        return colormap
+        return colorsd, colormap
 
     @staticmethod
-    def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_cellType: pd.DataFrame, topn: int) -> list:
+    def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_celltype: pd.DataFrame, topn: int) -> list:
         """
         get top n regulons for each cell type based on regulon specificity scores (rss)
         :param data:
         :param cluster_label:
-        :param rss_cellType:
+        :param rss_celltype:
         :param topn:
         :return: a list
         """
@@ -464,21 +502,23 @@ class PlotRegulatoryNetwork:
         topreg = []
         for i, c in enumerate(cats):
             topreg.extend(
-                list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
+                list(rss_celltype.T[c].sort_values(ascending=False)[:topn].index)
             )
         topreg = list(set(topreg))
         return topreg
 
     @staticmethod
-    def cal_zscore(auc_mtx: pd.DataFrame) -> pd.DataFrame:
+    def cal_zscore(auc_mtx: pd.DataFrame, save=False) -> pd.DataFrame:
         """
         calculate z-score for each gene among cells
         :param auc_mtx:
+        :param save:
         :return:
         """
         func = lambda x: (x - x.mean()) / x.std(ddof=0)
         auc_zscore = auc_mtx.transform(func, axis=0)
-        auc_zscore.to_csv('auc_zscore.csv', index=False)
+        if save:
+            auc_zscore.to_csv('auc_zscore.csv', index=False)
         return auc_zscore
 
 
@@ -494,6 +534,14 @@ def is_regulon_name(reg):
 
 # Generate a heatmap
 def palplot(pal, names, colors=None, size=1):
+    """
+
+    :param pal:
+    :param names:
+    :param colors:
+    :param size:
+    :return:
+    """
     n = len(pal)
     f, ax = plt.subplots(1, 1, figsize=(n * size, size))
     ax.imshow(np.arange(n).reshape(1, n), cmap=mpl.colors.ListedColormap(list(pal)), interpolation="nearest",
