@@ -28,13 +28,13 @@ from pyscenic.cli.utils import load_signatures
 from pyscenic.export import add_scenic_metadata
 from pyscenic.rss import regulon_specificity_scores
 from stereo.core.stereo_exp_data import StereoExpData
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.rcParams['pdf.fonttype'] = 42
-matplotlib.rcParams['ps.fonttype'] = 42
-matplotlib.rcParams['svg.fonttype'] = 'none'
-matplotlib.rcParams["ytick.labelright"] = True
-matplotlib.rcParams["ytick.labelleft"] = False
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+mpl.rcParams['svg.fonttype'] = 'none'
+mpl.rcParams["ytick.labelright"] = True
+mpl.rcParams["ytick.labelleft"] = False
 
 # modules in self project
 
@@ -314,7 +314,12 @@ class PlotRegulatoryNetwork:
         plt.close()
 
     @staticmethod
-    def plot_2d_reg_h5ad(data: anndata.AnnData, pos_label, auc_mtx, reg_name: str, fn: str, **kwargs):
+    def plot_2d_reg_h5ad(data: anndata.AnnData,
+                         pos_label,
+                         auc_mtx,
+                         reg_name: str,
+                         fn: str,
+                         **kwargs):
         """
         Plot genes of one regulon on a 2D map
         :param pos_label:
