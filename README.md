@@ -1,2 +1,2 @@
-# spaGRN
-A comprehensive tool to inference TF-centred, spatial gene regulatory networks in a spatial transcriptomics dataset.
+# SpaGRN
+A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.
