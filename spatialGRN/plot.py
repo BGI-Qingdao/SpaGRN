@@ -23,12 +23,18 @@ import pandas as pd
 import numpy as np
 import scanpy as sc
 import seaborn as sns
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 from pyscenic.cli.utils import load_signatures
 from pyscenic.export import add_scenic_metadata
 from pyscenic.rss import regulon_specificity_scores
 from stereo.core.stereo_exp_data import StereoExpData
+import matplotlib
+
+matplotlib.rcParams['pdf.fonttype'] = 42
+matplotlib.rcParams['ps.fonttype'] = 42
+matplotlib.rcParams['svg.fonttype'] = 'none'
+matplotlib.rcParams["ytick.labelright"] = True
+matplotlib.rcParams["ytick.labelleft"] = False
 
 # modules in self project
 
@@ -243,7 +249,7 @@ class PlotRegulatoryNetwork:
         plt.tick_params(axis='both', length=0, labelsize=6)
         plt.xticks(rotation=90)
         plt.tight_layout()
-        plt.savefig('dot.png')
+        plt.savefig('dot.pdf', format='pdf')
         return g
 
     @staticmethod
@@ -254,7 +260,7 @@ class PlotRegulatoryNetwork:
                     fn=None,
                     **kwargs):
         """
-        
+
         :param data:
         :param auc_mtx:
         :param reg_name:
@@ -262,6 +268,10 @@ class PlotRegulatoryNetwork:
         :param fn:
         :param kwargs:
         :return:
+
+        Example:
+            data = scanpy.read_h5ad('mouse_brain_3d.h5ad')
+            plot_2d_reg(data, 'spatial', auc_mtx, 'Zfp354c')
         """
         if isinstance(data, anndata.AnnData):
             if pos_label is not None:
@@ -300,7 +310,7 @@ class PlotRegulatoryNetwork:
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
-        plt.savefig(f'{reg_name.split("(")[0]}.png')
+        plt.savefig(f'{reg_name.strip("(+)")}.pdf', format='pdf')
         plt.close()
 
     @staticmethod
@@ -313,14 +323,11 @@ class PlotRegulatoryNetwork:
         :param reg_name:
         :param fn:
         :return:
-
-        Example:
-            plot_2d_reg_h5ad(data, 'spatial', auc_mtx, 'Zfp354c')
         """
         if '(+)' not in reg_name:
             reg_name = reg_name + '(+)'
         if fn is None:
-            fn = f'{reg_name.strip("(+)")}.png'
+            fn = f'{reg_name.strip("(+)")}.pdf'
 
         cell_coor = data.obsm[pos_label]
         auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
@@ -337,10 +344,11 @@ class PlotRegulatoryNetwork:
                          cmap='plasma',
                          lw=0,
                          **kwargs)
+        plt.axis("equal")
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
-        plt.savefig(fn)
+        plt.savefig(fn, format='pdf')
         plt.close()
 
     @staticmethod
@@ -349,8 +357,8 @@ class PlotRegulatoryNetwork:
                     auc_mtx,
                     reg_name: str,
                     fn: str,
-                    view_vertical: 222,
-                    view_horizontal: -80,
+                    view_vertical=222,
+                    view_horizontal=-80,
                     **kwargs):
         """
         Plot genes of one regulon on a 3D map
@@ -364,12 +372,12 @@ class PlotRegulatoryNetwork:
         :return:
 
         Example:
-            plot_3d_reg(data, 'spatial', auc_mtx, 'Zfp354c')
+            plot_3d_reg(data, 'spatial', auc_mtx, 'Zfp354c', view_vertical=30, view_horizontal=-30)
         """
         if '(+)' not in reg_name:
             reg_name = reg_name + '(+)'
         if fn is None:
-            fn = f'{reg_name.strip("(+)")}.png'
+            fn = f'{reg_name.strip("(+)")}.pdf'
 
         # prepare plotting data
         cell_coor = data.obsm[pos_label]
@@ -400,23 +408,21 @@ class PlotRegulatoryNetwork:
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
-        plt.savefig(fn)
+        plt.savefig(fn, format='pdf')
         plt.close()
 
     @staticmethod
     def rss_heatmap(data: anndata.AnnData,
-                    regulons_fn,
                     auc_mtx: pd.DataFrame,
                     cluster_label: str,
                     rss_fn: str = 'regulon_specificity_scores.txt',
                     topn=5,
                     save=True,
-                    fn='clusters_heatmap_top5.png'):
+                    fn='clusters_heatmap_top5.pdf'):
         """
         Plot heatmap for Regulon specificity scores (RSS) value
         :param data: 
         :param auc_mtx: 
-        :param regulons_fn:
         :param cluster_label:
         :param rss_fn:
         :param topn:
@@ -448,7 +454,7 @@ class PlotRegulatoryNetwork:
         sns.set()
         sns.set(font_scale=0.8)
         palplot(colors[:len(celltypes)], celltypes, size=1)
-        plt.savefig("rss_celltype_legend_top5.png", bbox_inches="tight")
+        plt.savefig("rss_celltype_legend_top5.pdf", format='pdf', bbox_inches="tight")
         plt.close()
 
         # plot z-score
@@ -469,7 +475,7 @@ class PlotRegulatoryNetwork:
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
         if save:
-            plt.savefig(fn)
+            plt.savefig(fn, format='pdf')
         return g
 
     @staticmethod
