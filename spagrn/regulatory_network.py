@@ -38,7 +38,7 @@ from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
 
 # modules in self project
-from spa_logger import logger
+from .spa_logger import logger
 
 
 def _name(fname: str) -> str:
