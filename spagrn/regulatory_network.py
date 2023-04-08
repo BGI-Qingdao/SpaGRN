@@ -36,7 +36,6 @@ from pyscenic.prune import prune2df, df2regulons
 from pyscenic.utils import modules_from_adjacencies
 from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
-from stereo.core.stereo_exp_data import StereoExpData
 
 # modules in self project
 from spa_logger import logger
@@ -226,7 +225,7 @@ class InferRegulatoryNetwork:
         return self._data
 
     @data.setter
-    def data(self, data: Union[StereoExpData, anndata.AnnData], pos_label='spatial'):
+    def data(self, data: anndata.AnnData, pos_label='spatial'):
         """
         re-assign data for this object.
         :param data:
@@ -341,16 +340,16 @@ class InferRegulatoryNetwork:
         :param pos_label: pos key in obsm, default 'spatial'. Only used if data is Anndata. 
         :return:
         """
-        if isinstance(self._data, StereoExpData):
-            self._matrix = self._data.exp_matrix
-            self._gene_names = self._data.gene_names
-            self._cell_names = self._data.cell_names
-            self._position = self._data.position
-        elif isinstance(self._data, anndata.AnnData):
-            self._matrix = self._data.X
-            self._gene_names = self._data.var_names
-            self._cell_names = self._data.obs_names
-            self._position = self._data.obsm[pos_label]
+        # if isinstance(self._data, StereoExpData):
+        #     self._matrix = self._data.exp_matrix
+        #     self._gene_names = self._data.gene_names
+        #     self._cell_names = self._data.cell_names
+        #     self._position = self._data.position
+        # elif isinstance(self._data, anndata.AnnData):
+        self._matrix = self._data.X
+        self._gene_names = self._data.var_names
+        self._cell_names = self._data.obs_names
+        self._position = self._data.obsm[pos_label]
 
     @staticmethod
     def is_valid_exp_matrix(mtx: pd.DataFrame):
@@ -426,20 +425,20 @@ class InferRegulatoryNetwork:
             raise TypeError('data must be anndata.Anndata object')
 
     @staticmethod
-    def load_stdata_by_cluster(data: StereoExpData,
-                               meta: pd.DataFrame,
-                               cluster_label: str,
-                               target_clusters: list) -> scipy.sparse.csc_matrix:
-        """
-
-        :param data:
-        :param meta:
-        :param cluster_label:
-        :param target_clusters:
-        :return:
-        """
-
-        return data.exp_matrix[meta[cluster_label].isin(target_clusters)]
+    # def load_stdata_by_cluster(data: StereoExpData,
+    #                            meta: pd.DataFrame,
+    #                            cluster_label: str,
+    #                            target_clusters: list) -> scipy.sparse.csc_matrix:
+    #     """
+    #
+    #     :param data:
+    #     :param meta:
+    #     :param cluster_label:
+    #     :param target_clusters:
+    #     :return:
+    #     """
+    #
+    #     return data.exp_matrix[meta[cluster_label].isin(target_clusters)]
 
     @staticmethod
     def read_motif_file(fname):

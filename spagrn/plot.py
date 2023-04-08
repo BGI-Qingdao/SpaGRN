@@ -27,7 +27,6 @@ import matplotlib.pyplot as plt
 from pyscenic.cli.utils import load_signatures
 from pyscenic.export import add_scenic_metadata
 from pyscenic.rss import regulon_specificity_scores
-from stereo.core.stereo_exp_data import StereoExpData
 import matplotlib as mpl
 
 mpl.rcParams['pdf.fonttype'] = 42
@@ -139,187 +138,14 @@ class PlotRegulatoryNetwork:
         """
         if isinstance(data, anndata.AnnData):
             return sc.pl.dotplot(data, var_names=gene_names, groupby=cluster_label, save=save, **kwargs)
-        elif isinstance(data, StereoExpData):
-            logger.warning('for StereoExpData object, please use function: dotplot_stereo')
-
-    # dotplot method for StereoExpData
-    @staticmethod
-    def _cal_percent_df(exp_matrix: pd.DataFrame,
-                        cluster_meta: pd.DataFrame,
-                        regulon_genes: str,
-                        celltype: list,
-                        groupby: str,
-                        cutoff: float = 0):
-        """
-        Expression percent
-        cell numbers
-        :param exp_matrix:
-        :param cluster_meta:
-        :param regulon_genes:
-        :param celltype:
-        :param cutoff:
-        :return:
-        """
-        # which cells are in cluster X
-        cells = cluster_meta[cluster_meta[groupby] == celltype]['cell']
-        ncells = set(exp_matrix.index).intersection(set(cells))
-        # get expression data for cells
-        ct_exp = exp_matrix.loc[ncells]
-        # input genes in regulon Y
-        # get expression data for regulon Y genes in cluster X cells
-        g_ct_exp = ct_exp[regulon_genes]
-        # count the number of genes which expressed in cluster X cells
-        regulon_cell_num = g_ct_exp[g_ct_exp > cutoff].count().count()
-        total_cell_num = g_ct_exp.shape[0] * g_ct_exp.shape[1]
-        if total_cell_num == 0:
-            return 0
-        else:
-            return regulon_cell_num / total_cell_num
 
     @staticmethod
-    def _cal_exp_df(exp_matrix, cluster_meta, regulon_genes, celltype: str, groupby: str):
-        """
-        Calculate average expression level for regulon Y genes in cluster X cells
-        :param exp_matrix:
-        :param cluster_meta:
-        :param regulon_genes:
-        :param celltype
-        :return: numpy.float32
-        """
-        # get expression data for regulon Y genes in cluster X cells
-        cells = cluster_meta[cluster_meta[groupby] == celltype]['cell']
-        ncells = set(exp_matrix.index).intersection(set(cells))
-        ct_exp = exp_matrix.loc[ncells]
-        g_ct_exp = ct_exp[regulon_genes]
-        if g_ct_exp.empty:
-            return 0
-        else:
-            return np.mean(g_ct_exp)
-
-    @staticmethod
-    def dotplot_stereo(data: StereoExpData,
-                       meta: pd.DataFrame,
-                       regulon_dict,
-                       regulon_names: list,
-                       celltypes: list,
-                       groupby: str,
-                       palette: str = 'RdYlBu_r',
-                       **kwargs):
-        """
-        Intuitive way of visualizing how feature expression changes across different
-        identity classes (clusters). The size of the dot encodes the percentage of
-        cells within a class, while the color encodes the AverageExpression level
-        across all cells within a class (blue is high).
-
-        :param data:
-        :param meta:
-        :param regulon_dict:
-        :param regulon_names:
-        :param celltypes:
-        :param groupby:
-        :param palette:
-        :param kwargs: features Input vector of features, or named list of feature vectors
-        if feature-grouped panels are desired
-        :return:
-        """
-        expr_matrix = data.to_df()
-        dot_data = {'cell type': [], 'regulons': [], 'percentage': [], 'avg exp': []}
-
-        for reg in regulon_names:
-            target_genes = regulon_dict[f'{reg}(+)']
-            for ct in celltypes:
-                reg_ct_percent = PlotRegulatoryNetwork._cal_percent_df(exp_matrix=expr_matrix,
-                                                                       cluster_meta=meta,
-                                                                       regulon_genes=target_genes,
-                                                                       celltype=ct, groupby=groupby)
-                reg_ct_avg_exp = PlotRegulatoryNetwork._cal_exp_df(exp_matrix=expr_matrix,
-                                                                   cluster_meta=meta,
-                                                                   regulon_genes=target_genes,
-                                                                   celltype=ct, groupby=groupby)
-                dot_data['regulons'].append(reg)
-                dot_data['cell type'].append(ct)
-                dot_data['percentage'].append(reg_ct_percent)
-                dot_data['avg exp'].append(reg_ct_avg_exp)
-
-        dot_df = pd.DataFrame(dot_data)
-        dot_df.to_csv('dot_df.csv', index=False)
-        g = sns.scatterplot(data=dot_df, size='percentage', hue='avg exp', x='regulons', y='cell type', sizes=(20, 200),
-                            marker='o', palette=palette, legend='full', **kwargs)
-        plt.legend(frameon=False, loc=(1.04, 0))
-        plt.tick_params(axis='both', length=0, labelsize=6)
-        plt.xticks(rotation=90)
-        plt.tight_layout()
-        plt.savefig('dot.pdf', format='pdf')
-        return g
-
-    @staticmethod
-    def plot_2d_reg(data: Union[StereoExpData, anndata.AnnData],
-                    auc_mtx: pd.DataFrame,
+    def plot_2d_reg(data: anndata.AnnData,
+                    pos_label,
+                    auc_mtx,
                     reg_name: str,
-                    pos_label=None,
-                    fn=None,
+                    fn: str,
                     **kwargs):
-        """
-
-        :param data:
-        :param auc_mtx:
-        :param reg_name:
-        :param pos_label:
-        :param fn:
-        :param kwargs:
-        :return:
-
-        Example:
-            data = scanpy.read_h5ad('mouse_brain_3d.h5ad')
-            plot_2d_reg(data, 'spatial', auc_mtx, 'Zfp354c')
-        """
-        if isinstance(data, anndata.AnnData):
-            if pos_label is not None:
-                PlotRegulatoryNetwork.plot_2d_reg_h5ad(data, pos_label, auc_mtx, reg_name, fn=fn, **kwargs)
-            else:
-                pass
-        elif isinstance(data, StereoExpData):
-            PlotRegulatoryNetwork.plot_2d_reg_stereo(data, auc_mtx, reg_name, fn=fn, **kwargs)
-
-    @staticmethod
-    def plot_2d_reg_stereo(data: StereoExpData, auc_mtx, reg_name: str, **kwargs):
-        """
-        Plot genes of one regulon on a 2D map
-        :param data:
-        :param auc_mtx:
-        :param reg_name:
-        :return:
-        """
-        if '(+)' not in reg_name:
-            reg_name = reg_name + '(+)'
-        cell_coor = data.position
-        auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
-        # prepare plotting data
-        sub_zscore = auc_zscore[reg_name]
-        # sort data points by zscore (low to high), because first dot will be covered by latter dots
-        zorder = np.argsort(sub_zscore.values)
-        # plot cell/bin dot, x y coor
-        sc = plt.scatter(cell_coor[:, 0][zorder],
-                         cell_coor[:, 1][zorder],
-                         c=sub_zscore.iloc[zorder],
-                         marker='.',
-                         edgecolors='none',
-                         cmap='plasma',
-                         lw=0,
-                         **kwargs)
-        plt.box(False)
-        plt.axis('off')
-        plt.colorbar(sc, shrink=0.35)
-        plt.savefig(f'{reg_name.strip("(+)")}.pdf', format='pdf')
-        plt.close()
-
-    @staticmethod
-    def plot_2d_reg_h5ad(data: anndata.AnnData,
-                         pos_label,
-                         auc_mtx,
-                         reg_name: str,
-                         fn: str,
-                         **kwargs):
         """
         Plot genes of one regulon on a 2D map
         :param pos_label:
