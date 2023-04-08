@@ -165,7 +165,7 @@ class ScoexpMatrix:
         return ret
 
 
-class InferenceRegulatoryNetwork:
+class InferRegulatoryNetwork:
     """
     Algorithms to inference Gene Regulatory Networks (GRN)
     """
@@ -419,7 +419,7 @@ class InferenceRegulatoryNetwork:
         Example:
             sub_data = load_anndata_by_cluster(data, 'psuedo_class', ['HBGLU9'])
         """
-        data = InferenceRegulatoryNetwork.read_file(fn)
+        data = InferRegulatoryNetwork.read_file(fn)
         if isinstance(data, anndata.AnnData):
             return data[data.obs[cluster_label].isin(target_clusters)]
         else:
@@ -541,7 +541,7 @@ class InferenceRegulatoryNetwork:
 
         if num_workers is None:
             num_workers = cpu_count()
-        custom_client = InferenceRegulatoryNetwork._set_client(num_workers)
+        custom_client = InferRegulatoryNetwork._set_client(num_workers)
         adjacencies = grnboost2(matrix,
                                 tf_names=tf_names,
                                 gene_names=genes,

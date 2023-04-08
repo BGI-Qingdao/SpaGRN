@@ -13,7 +13,7 @@ import os
 import sys
 import argparse
 from multiprocessing import cpu_count
-from regulatory_network import InferenceRegulatoryNetwork as irn
+from regulatory_network import InferRegulatoryNetwork as irn
 from plot import PlotRegulatoryNetwork as prn
 
 
