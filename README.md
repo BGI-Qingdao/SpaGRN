@@ -9,8 +9,11 @@ we provide two modules:
 * spatial -proximity-graph-based model
   
 ## Example Datasets
+
 * Stereo-seq Mourse Brain
 * Stereo-seq *Drosophila* embryos and larvae
+
+All input SRT data and related TF database can be download from http://www.bgiocean.com/SpaGRN/
 
 # Installation
 To install the latest version of SpaGRN:
