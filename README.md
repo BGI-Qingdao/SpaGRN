@@ -81,10 +81,10 @@ prn.rss_heatmap(data,
             cluster_label='annotation',
             rss_fn='regulon_specificity_scores.txt'),
             topn=5,
-            save=True)
+            save=True)  
 ```
 insert image here
-```
+
 ### 2. Spatial xx
 ```
 from spagrn import PlotRegulatoryNetwork as prn
