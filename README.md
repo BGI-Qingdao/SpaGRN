@@ -13,11 +13,14 @@ we provide two modules:
 * Stereo-seq *Drosophila* embryos and larvae
 
 # Installation
-To install SpaGRN via Pyxxx
+To install the latest version of SpaGRN:
 ```
-pip install spagrn
+git clone https://github.com/BGI-Qingdao/SpaGRN.git
+cd SpaGRN
+python setup.py sdist
+pip install dict/spagrn-1.0.0.tar.gz
 ```
-Alternatively, you can install SpaGRN using the following command:
+Alternatively, you can install SpaGRN via conda using the following command:
 ```
 conda install spagrn -c bioconda
 ```
@@ -40,7 +43,6 @@ The package provides functions for loading data, preprocessing data, fitting the
 ## Example workflow:
 ```
 from spagrn import InferRegulatoryNetwork as irn
-from spagrn import PlotRegulatoryNetwork as prn
 
 # Load data
 data = irn.read_file('data.h5ad')
@@ -51,11 +53,47 @@ data <- irn.preprocess(data)
 # Initialize gene regulatory network
 grn = irn(data)
 
-# load TF list
-tfs = irn.load_tfs(tfs_fn)
-
-# load the ranking databases
-dbs = irn.load_database(databases)
+grn.main(database_fn,
+             motif_anno_fn,
+             tfs_fn,
+             num_workers=cpu_count(),
+             cache=False,
+             save=True,
+             method=method,
+             prefix=prefix,
+             noweights=True)
 ```
+## Visualization
+SpaGRN offers a wide range of data visualization methods.
+### 1. Heatmap
+```
+# read data from previous analysis
+data = irn.read_file('data.h5ad')
+data <- irn.preprocess(data)
+auc_mtx = pd.read_csv('auc.csv', index_col=0)
+# alternative, extract data from the grn object
+data = grn.data
+auc_mtx = grn.auc_mtx
+
+# plot 
+prn.rss_heatmap(data,
+            auc_mtx,
+            cluster_label='annotation',
+            rss_fn='regulon_specificity_scores.txt'),
+            topn=5,
+            save=True)
+```
+insert image here
+```
+### 2. Spatial xx
+```
+from spagrn import PlotRegulatoryNetwork as prn
+# plot spatial distribution map of a regulon on a 2D plane 
+# target regulon
+regulon = 'Maf(+)'
+prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name=regulon, vmin=0, vmax=10)
+prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name=regulon, vmin=0, vmax=10, alpha=0.3)
+```
+insert image here
 
 # Acknowledgments
