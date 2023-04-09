@@ -19,11 +19,12 @@ pip install spagrn
 ```
 Alternatively, you can install SpaGRN using the following command:
 ```
-conda install spagrn
+conda install spagrn -c bioconda
 ```
 spaGRN can be imported as
 ```
 from spagrn import InferRegulatoryNetwork as irn
+from spagrn import PlotRegulatoryNetwork as prn
 ```
 
 # Usage
