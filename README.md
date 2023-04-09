@@ -87,7 +87,7 @@ prn.rss_heatmap(data,
             topn=5,
             save=True)  
 ```
-<img src="./resource/E14-16h_hotspot_clusters_heatmap_top5.png" width="300">
+<img src="./resource/E14-16h_hotspot_clusters_heatmap_top5.png" width="400">
 
 ### 2. Spatial xx
 ```
@@ -96,6 +96,7 @@ from spagrn import PlotRegulatoryNetwork as prn
 prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3', vmin=0, vmax=10)
 ```
 <img src="./resource/Egr3.png" width="300">
+
 ```
 prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=10, alpha=0.3)
 ```
