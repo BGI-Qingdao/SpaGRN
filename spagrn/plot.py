@@ -249,6 +249,8 @@ class PlotRegulatoryNetwork:
                     rss_fn: str = 'regulon_specificity_scores.txt',
                     topn=5,
                     save=True,
+                    subset=True,
+                    subset_size=5000, 
                     fn='clusters_heatmap_top5.pdf'):
         """
         Plot heatmap for Regulon specificity scores (RSS) value
@@ -258,11 +260,20 @@ class PlotRegulatoryNetwork:
         :param rss_fn:
         :param topn:
         :param save:
+        :param subset:
+        :parma subset_size:
         :param fn:
         :return:
         """
-        # load the regulon_list from a file using the load_signatures function
-        cell_order = data.obs[cluster_label].sort_values()
+        if subset and len(data.obs) > subset_size:
+            fraction = subset_size / len(data.obs)
+            #do stratified sampling
+            draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+            # load the regulon_list from a file using the load_signatures function
+            cell_order = draw_obs[cluster_label].sort_values()
+        else:
+            # load the regulon_list from a file using the load_signatures function
+            cell_order = data.obs[cluster_label].sort_values()
         celltypes = sorted(list(set(data.obs[cluster_label])))
 
         # Regulon specificity scores (RSS) across predicted cell types
