@@ -66,8 +66,7 @@ grn.main(database_fn,
              prefix=prefix,
              noweights=True)
 ```
-In the exmaple above:
-* data
+
 ## Visualization
 SpaGRN offers a wide range of data visualization methods.
 ### 1. Heatmap
@@ -88,7 +87,7 @@ prn.rss_heatmap(data,
             topn=5,
             save=True)  
 ```
-insert image here
+![plot](./resource/E14-16h_hotspot_clusters_heatmap_top5.png)
 
 ### 2. Spatial xx
 ```
