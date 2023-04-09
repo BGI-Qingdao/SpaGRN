@@ -66,6 +66,8 @@ grn.main(database_fn,
              prefix=prefix,
              noweights=True)
 ```
+In the exmaple above:
+* data
 ## Visualization
 SpaGRN offers a wide range of data visualization methods.
 ### 1. Heatmap
@@ -92,11 +94,12 @@ insert image here
 ```
 from spagrn import PlotRegulatoryNetwork as prn
 # plot spatial distribution map of a regulon on a 2D plane 
-# target regulon
-regulon = 'Maf(+)'
-prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name=regulon, vmin=0, vmax=10)
-prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name=regulon, vmin=0, vmax=10, alpha=0.3)
+prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3', vmin=0, vmax=10)
 ```
-insert image here
+![plot](./resource/Egr3.png)
+```
+prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=10, alpha=0.3)
+```
+![plot](./resource/grh_L3.png)
 
 # Acknowledgments
