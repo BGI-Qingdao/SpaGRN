@@ -4,7 +4,7 @@ A comprehensive tool to infer TF-centred, spatial gene regulatory networks for t
 ## Overview
 SpaGRN is an open-source Python package for inferring gene regulatory networks (GRNs) based on spatial gene expression data. The model takes into account the spatial proximity of genes to infer their regulatory relationships. The package is particularly useful for analyzing spatially resolved gene expression data.
 
-we provide two modules:
+we provide two modules to infer the co-expressed and co-localized gene network:
 * spatially-aware model
 * spatial -proximity-graph-based model
   
@@ -34,14 +34,13 @@ from spagrn import PlotRegulatoryNetwork as prn
 ```
 
 # Usage
-The package provides functions for loading data, preprocessing data, fitting the XX model, and visualizing the inferred GRNs. The main functions are:
-* loading ? preprocessing
-* two
-* TF gene similarity
-* get modules
-* cistarget (prune modules)
-* AUCell (calculate regulon activity level)
-* plot network: Visualization
+The package provides functions for loading data, preprocessing data, reconstruct gene network, and visualizing the inferred GRNs. The main functions are:
+* Loading and process data
+* Compute TF-gene similarity
+* Create modules
+* Perform motif enrichment and determine regulons
+* Calculate regulon activity level across cells
+* Visualize network and other results
 
 ## Example workflow:
 ```
@@ -89,17 +88,17 @@ prn.rss_heatmap(data,
 ```
 <img src="./resource/E14-16h_hotspot_clusters_heatmap_top5.png" width="400">
 
-### 2. Spatial xx
+### 2. Spatial Plots
+Plot spatial distribution map of a regulon on a 2D plane:
 ```
 from spagrn import PlotRegulatoryNetwork as prn
-# plot spatial distribution map of a regulon on a 2D plane 
+
 prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3', vmin=0, vmax=10)
 ```
 <img src="./resource/Egr3.png" width="300">
 
+If one wants to display their 3D data in a three-dimensional fashion:
 ```
 prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=10, alpha=0.3)
 ```
 <img src="./resource/grh_L3.png" width="300">
-
-# Acknowledgments
