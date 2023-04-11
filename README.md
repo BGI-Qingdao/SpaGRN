@@ -27,7 +27,7 @@ Alternatively, you can install SpaGRN via conda using the following command:
 ```
 conda install spagrn -c bioconda
 ```
-spaGRN can be imported as
+SpaGRN can be imported as:
 ```
 from spagrn import InferRegulatoryNetwork as irn
 from spagrn import PlotRegulatoryNetwork as prn
@@ -35,8 +35,8 @@ from spagrn import PlotRegulatoryNetwork as prn
 
 # Usage
 The package provides functions for loading data, preprocessing data, reconstructing gene network, and visualizing the inferred GRNs. The main functions are:
-* Loading and process data
-* Compute TF-gene similarity
+* Load and process data
+* Compute TF-gene similarities
 * Create modules
 * Perform motif enrichment and determine regulons
 * Calculate regulon activity level across cells
@@ -93,13 +93,12 @@ Plot spatial distribution map of a regulon on a 2D plane:
 ```
 from spagrn import PlotRegulatoryNetwork as prn
 
-prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3', vmin=0, vmax=10)
+prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3')
 ```
 <img src="./resource/Egr3.png" width="300">
 
 If one wants to display their 3D data in a three-dimensional fashion:
 ```
-prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=10, alpha=0.3)
+prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=4, alpha=0.3)
 ```
 <img src="./resource/grh_L3.png" width="300">
-![image](https://user-images.githubusercontent.com/38022049/230905283-321f1bca-92cc-4ea6-8cd5-93e30447f8fc.png)
