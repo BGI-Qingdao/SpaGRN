@@ -50,7 +50,7 @@ from spagrn import InferRegulatoryNetwork as irn
 data = irn.read_file('data.h5ad')
 
 # Preprocess data
-data <- irn.preprocess(data)
+data = irn.preprocess(data)
 
 # Initialize gene regulatory network
 grn = irn(data)
