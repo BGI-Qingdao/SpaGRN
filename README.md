@@ -1,19 +1,19 @@
 # SpaGRN
-A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.
+A comprehensive tool to infer TF-centered, spatial gene regulatory networks for the spatially resolved transcriptomic data.
 
 ## Overview
-SpaGRN is an open-source Python package for inferring gene regulatory networks (GRNs) based on spatial gene expression data. The model takes into account the spatial proximity of genes to infer their regulatory relationships. The package is particularly useful for analyzing spatially resolved gene expression data.
+SpaGRN is an open-source Python package for inferring gene regulatory networks (GRNs) based on spatial gene expression data. The model takes into account the spatial proximity of genes and TF binding to infer their regulatory relationships. The package is particularly useful for analyzing spatially resolved gene expression data.
 
 we provide two modules to infer the co-expressed and co-localized gene network:
 * spatially-aware model
-* spatial -proximity-graph-based model
+* spatial-proximity-graph-based model
   
-## Example Datasets
+## Examples
 
-* Stereo-seq Mourse Brain
-* Stereo-seq *Drosophila* embryos and larvae
+* Stereo-seq Mouse Brain
+* Stereo-seq *Drosophila* Embryo and Larvae
 
-All input SRT data and related TF database can be download from http://www.bgiocean.com/SpaGRN/
+All input SRT data and related TF database can be downloaded from http://www.bgiocean.com/SpaGRN/
 
 # Installation
 To install the latest version of SpaGRN:
@@ -27,16 +27,16 @@ Alternatively, you can install SpaGRN via conda using the following command:
 ```
 conda install spagrn -c bioconda
 ```
-spaGRN can be imported as
+SpaGRN can be imported as:
 ```
 from spagrn import InferRegulatoryNetwork as irn
 from spagrn import PlotRegulatoryNetwork as prn
 ```
 
 # Usage
-The package provides functions for loading data, preprocessing data, reconstruct gene network, and visualizing the inferred GRNs. The main functions are:
-* Loading and process data
-* Compute TF-gene similarity
+The package provides functions for loading data, preprocessing data, reconstructing gene network, and visualizing the inferred GRNs. The main functions are:
+* Load and process data
+* Compute TF-gene similarities
 * Create modules
 * Perform motif enrichment and determine regulons
 * Calculate regulon activity level across cells
@@ -93,12 +93,12 @@ Plot spatial distribution map of a regulon on a 2D plane:
 ```
 from spagrn import PlotRegulatoryNetwork as prn
 
-prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3', vmin=0, vmax=10)
+prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3')
 ```
 <img src="./resource/Egr3.png" width="300">
 
 If one wants to display their 3D data in a three-dimensional fashion:
 ```
-prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=10, alpha=0.3)
+prn.plot_3d_reg(data, 'spatial', auc_mtx, reg_name='grh', vmin=0, vmax=4, alpha=0.3)
 ```
 <img src="./resource/grh_L3.png" width="300">
