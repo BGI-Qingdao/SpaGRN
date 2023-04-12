@@ -205,7 +205,7 @@ class InferRegulatoryNetwork:
             },
             'grnboost': {
                 'rank_threshold': 1500,
-                'prune_auc_threshold': 0.5,
+                'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
                 'motif_similarity_fdr': 0.05,
                 'auc_threshold': 0.5,
