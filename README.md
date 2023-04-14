@@ -46,7 +46,7 @@ The package provides functions for loading data, preprocessing data, reconstruct
 ```
 from spagrn import InferRegulatoryNetwork as irn
 
-if __name__ == '__main__':  #notice: to avoid parrallel bugs, please do not ignore this line!
+if __name__ == '__main__':  #notice: to avoid concurrent bugs, please do not ignore this line!
     database_fn='xxx'
     motif_anno_fn='xxx'
     tfs_fn='xxx'
