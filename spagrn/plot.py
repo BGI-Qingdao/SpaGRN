@@ -251,7 +251,8 @@ class PlotRegulatoryNetwork:
                     save=True,
                     subset=True,
                     subset_size=5000, 
-                    fn='clusters_heatmap_top5.pdf'):
+                    fn='clusters_heatmap_top5.pdf',
+                    legend_fn="rss_celltype_legend_top5.png"):
         """
         Plot heatmap for Regulon specificity scores (RSS) value
         :param data: 
@@ -281,6 +282,9 @@ class PlotRegulatoryNetwork:
         # Select the top 5 regulon_list from each cell type
         topreg = PlotRegulatoryNetwork.get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
 
+
+        obs_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea', 'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut', 'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
+
         colors = [
             '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
             '#6b004f', '#573b00', '#005659', '#5e7b87', '#0000dd', '#00acc6',
@@ -289,15 +293,11 @@ class PlotRegulatoryNetwork:
             '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
             '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
         ]
-        colorsd = dict((i, c) for i, c in zip(celltypes, colors))
-        colormap = [colorsd[x] for x in cell_order]
+        colorsd = dict((i, c) for i, c in zip(obs_list, colors))
+        colormap = [colorsd[x] for x in cell_order]        
 
         # plot legend
-        sns.set()
-        sns.set(font_scale=0.8)
-        palplot(colors[:len(celltypes)], celltypes, size=1)
-        plt.savefig("rss_celltype_legend_top5.pdf", format='pdf', bbox_inches="tight")
-        plt.close()
+        plot_legend(colormap, obs_list, legend_fn)
 
         # plot z-score
         auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
@@ -402,3 +402,13 @@ def palplot(pal, names, colors=None, size=1):
     for idx, (name, color) in enumerate(zip(names, colors)):
         ax.text(0.0 + idx, 0.0, name, color=color, horizontalalignment='center', verticalalignment='center')
     return f
+
+
+def plot_legend(colormap, obs_list, legend_fn):
+    # plot legend
+    sns.set()
+    sns.set(font_scale=0.8)
+    palplot(colormap, obs_list, size=1)
+    plt.savefig(legend_fn, bbox_inches="tight")
+    plt.close()
+
