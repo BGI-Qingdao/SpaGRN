@@ -297,7 +297,7 @@ class PlotRegulatoryNetwork:
         colormap = [colorsd[x] for x in cell_order]        
 
         # plot legend
-        plot_legend(colormap, obs_list, legend_fn)
+        #plot_legend(colormap, obs_list, legend_fn)
 
         # plot z-score
         auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
@@ -313,7 +313,7 @@ class PlotRegulatoryNetwork:
                            row_colors=colormap,
                            row_cluster=False, col_cluster=True)
         g.cax.set_visible(True)
-        plt.yticks(np.arange(0, rss_cellType.shape[0] + 1, 20))
+        g.ax_heatmap.set_yticks([])
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
         if save:
