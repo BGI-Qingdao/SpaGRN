@@ -46,16 +46,18 @@ The package provides functions for loading data, preprocessing data, reconstruct
 ```
 from spagrn import InferRegulatoryNetwork as irn
 
-# Load data
-data = irn.read_file('data.h5ad')
-
-# Preprocess data
-data = irn.preprocess(data)
-
-# Initialize gene regulatory network
-grn = irn(data)
-
-grn.main(database_fn,
+if __name__ == '__main__':  #notice: to avoid concurrent bugs, please do not ignore this line!
+    database_fn='xxx'
+    motif_anno_fn='xxx'
+    tfs_fn='xxx'
+    # Load data
+    data = irn.read_file('data.h5ad')
+    # Preprocess data
+    data = irn.preprocess(data)
+    # Initialize gene regulatory network
+    grn = irn(data)
+    # run main pipeline
+    grn.main(database_fn,
              motif_anno_fn,
              tfs_fn,
              num_workers=cpu_count(),
