@@ -21,7 +21,7 @@ To install the latest version of SpaGRN:
 git clone https://github.com/BGI-Qingdao/SpaGRN.git
 cd SpaGRN
 python setup.py sdist
-pip install dict/spagrn-1.0.0.tar.gz
+pip install dist/spagrn-1.0.0.tar.gz
 ```
 Alternatively, you can install SpaGRN via conda using the following command:
 ```
