@@ -20,16 +20,9 @@ We also provide an interactive 3D GRN atlas database, covering different GRN inf
 
 
 # Installation
-To install the latest version of SpaGRN:
+To install the latest version of SpaGRN via `pip`:
 ```å
-git clone https://github.com/BGI-Qingdao/SpaGRN.git
-cd SpaGRN
-python setup.py sdist
-pip install dist/spagrn-1.0.0.tar.gz
-```
-Alternatively, you can install SpaGRN via conda using the following command:
-```
-conda install spagrn -c bioconda
+pip install spagrn==1.0.0
 ```
 SpaGRN can be imported as:
 ```
