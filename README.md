@@ -20,9 +20,9 @@ We also provide an interactive 3D GRN atlas database, covering different GRN inf
 
 
 # Installation
-To install the latest version of SpaGRN via `pip`:
+To install the latest version of SpaGRN via `PyPI`:
 ```å
-pip install spagrn==1.0.0
+pip install spagrn
 ```
 SpaGRN can be imported as:
 ```
