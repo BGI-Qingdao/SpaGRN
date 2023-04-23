@@ -22,7 +22,7 @@ We also provide an interactive 3D GRN atlas database, covering different GRN inf
 # Installation
 To install the latest version of SpaGRN via `PyPI`:
 ```
-pip install spagrn
+pip install spagrn==1.0.4
 ```
 SpaGRN can be imported as:
 ```
