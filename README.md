@@ -32,7 +32,20 @@ from spagrn import PlotRegulatoryNetwork as prn
 
 Dependencies
 ```
-Pandas, numpy, scanpy, matplotlib, and seaborn are required to be pre-installed
+anndata==0.8.0 
+pandas>=1.3.5
+scanpy
+seaborn
+matplotlib 
+pyscenic==0.12.1
+hotspotsc==1.1.1
+scipy
+numpy
+dask
+arboreto
+ctxcore>=0.2.0
+sklearn
+multiprocessing_on_dill
 ```
 
 
