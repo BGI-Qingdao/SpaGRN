@@ -27,7 +27,7 @@ setuptools.setup(
         "dask",
         "arboreto",
         "ctxcore>=0.2.0",
-        "sklearn"
+        "scikit-learn"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
