@@ -21,7 +21,7 @@ We also provide an interactive 3D GRN atlas database, covering different GRN inf
 
 # Installation
 To install the latest version of SpaGRN via `PyPI`:
-```å
+```
 pip install spagrn
 ```
 SpaGRN can be imported as:
@@ -30,11 +30,11 @@ from spagrn import InferRegulatoryNetwork as irn
 from spagrn import PlotRegulatoryNetwork as prn
 ```
 
-Dependencies
+Dependencies:
 ```
-anndata==0.8.0 
-pandas>=1.3.5
-scanpy
+anndata==0.8.0
+pandas<2.0.0,>=1.3.4
+scanpy==1.9.1
 seaborn
 matplotlib 
 pyscenic==0.12.1
@@ -44,8 +44,7 @@ numpy
 dask
 arboreto
 ctxcore>=0.2.0
-sklearn
-multiprocessing_on_dill
+scikit-learn
 ```
 
 
