@@ -6,7 +6,7 @@ from pathlib import Path
 
 setuptools.setup(
     name="spagrn",
-    version="1.0.4",
+    version="1.0.5",
     author="Yao LI, Lidong GUO, Mengyang XU",
     author_email="liyao1@genomics.cn, guolidong@genomics.cn, xumengyang@genomics.cn",
     url="https://github.com/BGI-Qingdao/SpaGRN",
@@ -15,8 +15,8 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         "anndata==0.8.0",
-        "pandas>=1.3.5",
-        "scanpy",
+        "pandas<2.0.0, >=1.3.4",
+        "scanpy==1.9.1",
         "seaborn",
         "matplotlib",
         "pyscenic==0.12.1",
