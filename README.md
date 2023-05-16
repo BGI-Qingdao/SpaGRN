@@ -24,6 +24,18 @@ To install the latest version of SpaGRN via `PyPI`:
 ```
 pip install spagrn==1.0.4
 ```
+Or install by bioconda
+
+```
+conda install -c bioconda spagrn
+
+#notice: if you install by conda, you have to install below dependence seperatelly
+#pyscenic==0.12.1
+#hotspotsc==1.1.1
+#arboreto
+#ctxcore>=0.2.0
+```
+
 SpaGRN can be imported as:
 ```
 from spagrn import InferRegulatoryNetwork as irn
