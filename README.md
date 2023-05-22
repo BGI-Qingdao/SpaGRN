@@ -29,7 +29,7 @@ Or install by bioconda
 ```
 conda install -c bioconda spagrn
 
-#notice: if you install by conda, you have to install below dependence seperatelly
+# Notice: If you install via conda, you will need to install the following dependencies separately:
 #pyscenic==0.12.1
 #hotspotsc==1.1.1
 #arboreto
