@@ -328,7 +328,7 @@ class InferRegulatoryNetwork:
         """
         og_params = deepcopy(self._params)
         try:
-            for key, value in dic:
+            for key, value in dic.items():
                 self._params[method][key] = value
         except KeyError:
             logger.warning('KeyError, params did not change')  # TODO
