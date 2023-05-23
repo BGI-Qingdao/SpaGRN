@@ -424,7 +424,7 @@ class InferRegulatoryNetwork:
         else:
             raise TypeError('data must be anndata.Anndata object')
 
-    @staticmethod
+    # @staticmethod
     # def load_stdata_by_cluster(data: StereoExpData,
     #                            meta: pd.DataFrame,
     #                            cluster_label: str,
