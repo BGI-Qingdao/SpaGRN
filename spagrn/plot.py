@@ -239,7 +239,8 @@ class PlotRegulatoryNetwork:
         plt.box(False)
         plt.axis('off')
         plt.colorbar(sc, shrink=0.35)
-        plt.savefig(fn, format='pdf')
+        plt.savefig(fn)
+        #plt.savefig(fn, format='pdf')
         plt.close()
 
     @staticmethod
@@ -252,7 +253,8 @@ class PlotRegulatoryNetwork:
                     subset=True,
                     subset_size=5000, 
                     fn='clusters_heatmap_top5.pdf',
-                    legend_fn="rss_celltype_legend_top5.png"):
+                    legend_fn="rss_celltype_legend_top5.png",
+                    obs_list=None):
         """
         Plot heatmap for Regulon specificity scores (RSS) value
         :param data: 
@@ -283,9 +285,9 @@ class PlotRegulatoryNetwork:
         topreg = PlotRegulatoryNetwork.get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
 
 
-        obs_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea', 'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut', 'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
-
-        colors = [
+        #obs_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea', 'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut', 'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
+        
+        celltype_colors = [
             '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
             '#6b004f', '#573b00', '#005659', '#5e7b87', '#0000dd', '#00acc6',
             '#bcb6ff', '#bf03b8', '#645472', '#790000', '#0774d8', '#729a7c',
@@ -293,11 +295,13 @@ class PlotRegulatoryNetwork:
             '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
             '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
         ]
-        colorsd = dict((i, c) for i, c in zip(obs_list, colors))
+        if obs_list is None:
+            obs_list = celltypes.copy()
+        colorsd = dict((i, c) for i, c in zip(obs_list, celltype_colors))
         colormap = [colorsd[x] for x in cell_order]        
 
         # plot legend
-        #plot_legend(colormap, obs_list, legend_fn)
+        PlotRegulatoryNetwork.plot_legend(colorsd, legend_fn)
 
         # plot z-score
         auc_zscore = PlotRegulatoryNetwork.cal_zscore(auc_mtx)
@@ -319,6 +323,31 @@ class PlotRegulatoryNetwork:
         if save:
             plt.savefig(fn, format='pdf')
         return g
+    
+    @staticmethod
+    def highlight_key(color_dir: dict, new_value: str='#8a8787', key_to_highlight: list=['Cardiac muscle lineages']):
+        """
+        Highlight one or more interested keys/celltypes when plotting,
+        the rest of keys/celltypes will be set to gray by default.
+        """
+        #assert key_to_highlight in color_dir.keys()
+        for k, v in color_dir.items():
+            if k not in key_to_highlight:
+                color_dir[k] = new_value
+        return color_dir
+
+    @staticmethod
+    def plot_legend(color_dir, fn):
+        fig = plt.figure(figsize=(10, 5))
+        markers = [plt.Line2D([0,0],[0,0], color=color, marker='o', linestyle='') for color in color_dir.values()]
+        plt.legend(markers, color_dir.keys(), numpoints=1, ncol=3, loc='center')
+        plt.box(False)
+        plt.xticks([])
+        plt.yticks([])
+        plt.tight_layout()
+        plt.savefig(fn)
+        plt.close()
+
 
     @staticmethod
     def map_celltype_colors(data, celltype_colors: list, celltypes: list, cluster_label: str):
@@ -379,36 +408,4 @@ def is_regulon_name(reg):
     if '(+)' in reg or '(-)' in reg:
         return True
 
-
-# Generate a heatmap
-def palplot(pal, names, colors=None, size=1):
-    """
-
-    :param pal:
-    :param names:
-    :param colors:
-    :param size:
-    :return:
-    """
-    n = len(pal)
-    f, ax = plt.subplots(1, 1, figsize=(n * size, size))
-    ax.imshow(np.arange(n).reshape(1, n), cmap=mpl.colors.ListedColormap(list(pal)), interpolation="nearest",
-              aspect="auto")
-    ax.set_xticks(np.arange(n) - .5)
-    ax.set_yticks([-.5, .5])
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-    colors = n * ['k'] if colors is None else colors
-    for idx, (name, color) in enumerate(zip(names, colors)):
-        ax.text(0.0 + idx, 0.0, name, color=color, horizontalalignment='center', verticalalignment='center')
-    return f
-
-
-def plot_legend(colormap, obs_list, legend_fn):
-    # plot legend
-    sns.set()
-    sns.set(font_scale=0.8)
-    palplot(colormap, obs_list, size=1)
-    plt.savefig(legend_fn, bbox_inches="tight")
-    plt.close()
 
