@@ -610,6 +610,9 @@ class InferRegulatoryNetwork:
         """
         if os.path.isfile('local_correlations.csv'):
             local_correlations = pd.read_csv('local_correlations.csv', index_col=0)
+        elif os.path.isfile(fn):  # 2023-05-23: TODO: check what should be the index
+            local_correlations = pd.read_csv(fn)
+            return local_correlations
         else:
             hs = hotspot.Hotspot(data,
                                  layer_key=layer_key,
@@ -638,7 +641,9 @@ class InferRegulatoryNetwork:
         local_correlations = local_correlations.melt(id_vars=['TF'])
         local_correlations.columns = ['TF', 'target', 'importance']
         local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
-        # remove if TF = target
+        # TODO: change variable name from local_correlations to adjs
+	
+	# remove if TF = target
         local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
 
         if save:
@@ -802,11 +807,14 @@ class InferRegulatoryNetwork:
                          normalize=normalize,
                          seed=seed,
                          **kwargs)
-        # check if there were regulons contain all zero auc values
-        if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
-            logger.warning('auc matrix contains all zero columns')
-        auc_mtx = auc_mtx.loc[:, ~auc_mtx.ne(0).any()]
         
+        def remove_all_zero(auc_mtx):
+            # check if there were regulons contain all zero auc values
+            if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
+                logger.warning('auc matrix contains all zero columns')
+            auc_mtx = auc_mtx.loc[:, ~auc_mtx.ne(0).any()]
+            return auc_mtx
+
         self.auc_mtx = auc_mtx
 
         if save:
@@ -931,7 +939,7 @@ class InferRegulatoryNetwork:
              model='bernoulli',
              latent_obsm_key='spatial',
              umi_counts_obs_key=None,
-             cluster_label='annotation',
+             cluster_label='annotation',  # TODO: shouldn't set default value
 
              noweights = None ,
              normalize: bool = False):
