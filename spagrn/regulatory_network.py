@@ -195,7 +195,7 @@ class InferRegulatoryNetwork:
 
         # other settings
         self._params = {
-             'hotspot': {
+            'hotspot': {
                 'rank_threshold': 1500,
                 'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
@@ -642,8 +642,8 @@ class InferRegulatoryNetwork:
         local_correlations.columns = ['TF', 'target', 'importance']
         local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
         # TODO: change variable name from local_correlations to adjs
-	
-	# remove if TF = target
+
+        # remove if TF = target
         local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
 
         if save:
@@ -807,7 +807,7 @@ class InferRegulatoryNetwork:
                          normalize=normalize,
                          seed=seed,
                          **kwargs)
-        
+
         def remove_all_zero(auc_mtx):
             # check if there were regulons contain all zero auc values
             if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
@@ -941,7 +941,7 @@ class InferRegulatoryNetwork:
              umi_counts_obs_key=None,
              cluster_label='annotation',  # TODO: shouldn't set default value
 
-             noweights = None ,
+             noweights=None,
              normalize: bool = False):
         """
 
@@ -974,7 +974,7 @@ class InferRegulatoryNetwork:
 
         if target_genes is None:
             target_genes = self._gene_names
-        
+
         if noweights is None:
             noweights = self.params[method]["noweights"]
 
@@ -1030,6 +1030,7 @@ class InferRegulatoryNetwork:
                                       motif_similarity_fdr=self.params[method]["motif_similarity_fdr"])
 
         self.regulon_dict = self.get_regulon_dict(regulons)
+        self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
 
         # 5: Cellular enrichment (aka AUCell)
         auc_matrix = self.auc_activity_level(df,
@@ -1046,9 +1047,9 @@ class InferRegulatoryNetwork:
         self.cal_regulon_score(cluster_label=cluster_label, fn=f'{prefix}_regulon_specificity_scores.txt')
 
         # save results
-        if save:
-            logger.info('saving results...')
-            self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
-            self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
+        # if save:
+            # logger.info('saving results...')
+            # self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
+            # self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
             # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
-            logger.info('results saving DONE')
+            # logger.info('results saving DONE')
