@@ -14,7 +14,7 @@ import sys
 import argparse
 from multiprocessing import cpu_count
 from regulatory_network import InferRegulatoryNetwork as irn
-from plot import PlotRegulatoryNetwork as prn
+import plot as prn
 
 
 if __name__ == '__main__':
@@ -43,7 +43,6 @@ if __name__ == '__main__':
 
     # create grn
     grn = irn(data)
-    grn_plot = prn(data)
 
     # run analysis
     grn.main(database_fn,
