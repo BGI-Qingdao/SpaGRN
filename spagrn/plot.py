@@ -279,10 +279,13 @@ def highlight_key(color_dir: dict,
     return color_dir
 
 
-def plot_legend(color_dir, numpoints=1, ncol=3, loc='center', figsize=(10, 5), fn='legend.png', **kwargs):
+def plot_legend(color_dir, marker='o', linestyle='', numpoints=1, ncol=3, loc='center', figsize=(10, 5),
+                fn='legend.png', **kwargs):
     """
     Make separate legend file for heatmap
     :param color_dir:
+    :param linestyle: legend icon style
+    :param marker: legend icon style
     :param numpoints:
     :param ncol: number of columns, legend layout
     :param loc: location of the legend
@@ -296,8 +299,9 @@ def plot_legend(color_dir, numpoints=1, ncol=3, loc='center', figsize=(10, 5), f
         plot_legend(color_dir)
     """
     fig = plt.figure(figsize=figsize)
-    markers = [plt.Line2D([0, 0], [0, 0], color=color, marker='o', linestyle='') for color in color_dir.values()]
-    plt.legend(markers, color_dir.keys(), numpoints=numpoints, ncol=ncol, loc=loc, **kwargs)
+    markers = [plt.Line2D([0, 0], [0, 0], color=color, marker=marker, linestyle=linestyle, **kwargs)
+               for color in color_dir.values()]
+    plt.legend(markers, color_dir.keys(), numpoints=numpoints, ncol=ncol, loc=loc)
     plt.box(False)
     plt.xticks([])
     plt.yticks([])
