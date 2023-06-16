@@ -282,7 +282,7 @@ def highlight_key(color_dir: dict,
 def plot_legend(color_dir, numpoints=1, ncol=3, loc='center', figsize=(10, 5), fn='legend.png', **kwargs):
     """
     Make separate legend file for heatmap
-    :param color_dir: 
+    :param color_dir:
     :param numpoints:
     :param ncol: number of columns, legend layout
     :param loc: location of the legend
