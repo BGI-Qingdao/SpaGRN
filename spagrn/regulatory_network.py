@@ -922,6 +922,33 @@ class InferRegulatoryNetwork:
         sub_df = sub_adj[sub_adj.target.isin(targets)]
         sub_df.to_csv(fn, index=False, sep='\t')
 
+    @classmethod
+    def get_cytoscape(cls,
+                      regulons: list,
+                      adjacencies: pd.DataFrame,
+                      tf: str,
+                      fn: str = 'cytoscape.txt'):
+        """
+        Save GRN result of one TF, into Cytoscape format for down stream analysis
+        :param regulons: list of regulon objects, output of prune step
+        :param adjacencies: adjacencies matrix
+        :param tf: one target TF name
+        :param fn: output file name
+        :return:
+        Example:
+            grn.get_cytoscape(regulons, adjacencies, 'Gnb4', 'Gnb4_cytoscape.txt')
+        """
+        # get TF data
+        if isinstance(regulons, list):
+            regulon_dict = cls.get_regulon_dict(regulons)
+        else:
+            regulon_dict = regulons
+        sub_adj = adjacencies[adjacencies.TF == tf]
+        targets = regulon_dict[f'{tf}(+)']
+        # all the target genes of the TF
+        sub_df = sub_adj[sub_adj.target.isin(targets)]
+        sub_df.to_csv(fn, index=False, sep='\t')
+
     # GRN pipeline main logic
     def main(self,
              databases: str,
