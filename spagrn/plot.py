@@ -179,6 +179,74 @@ def plot_3d_reg(data: anndata.AnnData,
     plt.close()
 
 
+def plot_3d_tf(data: anndata.AnnData,
+                pos_label,
+                auc_mtx,
+                reg_name: str,
+                fn: str,
+                view_vertical=222,
+                view_horizontal=-80,
+                show_bg=False,
+                xscale=1,
+                yscale=1,
+                zscale=1,
+                **kwargs):
+    """
+    Plot genes of one regulon on a 3D map
+    :param pos_label:
+    :param data:
+    :param auc_mtx:
+    :param reg_name:
+    :param fn:
+    :param view_vertical: vertical angle to view to the 3D object
+    :param view_horizontal: horizontal angle to view the 3D object
+    :param show_bg: if show background
+    :param xscale:
+    :param yscale:
+    :param zscale:
+    :return:
+
+    Example:
+        plot_3d_reg(data, 'spatial', auc_mtx, 'Zfp354c', view_vertical=30, view_horizontal=-30)
+    """
+    if '(+)' not in reg_name:
+        reg_name = reg_name + '(+)'
+
+    # prepare plotting data
+    cell_coor = data.obsm[pos_label]
+    auc_zscore = cal_zscore(auc_mtx)
+    sub_zscore = auc_zscore[reg_name]
+
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    sc = ax.scatter(cell_coor[:, 0],
+                    cell_coor[:, 1],
+                    cell_coor[:, 2],
+                    c=sub_zscore,
+                    marker='.',
+                    edgecolors='none',
+                    cmap='plasma',
+                    lw=0, **kwargs)
+    # set view angle
+    ax.view_init(view_vertical, view_horizontal)
+    # scale axis
+    xlen = cell_coor[:, 0].max() - cell_coor[:, 0].min()
+    ylen = cell_coor[:, 1].max() - cell_coor[:, 1].min()
+    zlen = cell_coor[:, 2].max() - cell_coor[:, 2].min()
+    _xscale = xscale
+    _yscale = ylen / xlen * yscale
+    _zscale = zlen / xlen * zscale
+    ax.get_proj = lambda: np.dot(Axes3D.get_proj(ax), np.diag([_xscale, _yscale, _zscale, 1]))
+
+    if not show_bg:
+        plt.box(False)
+        plt.axis('off')
+    plt.colorbar(sc, shrink=0.35)
+    plt.savefig(fn)
+    plt.close()
+
+
 def rss_heatmap(data: anndata.AnnData,
                 auc_mtx: pd.DataFrame,
                 cluster_label: str,
@@ -236,7 +304,7 @@ def rss_heatmap(data: anndata.AnnData,
     colormap = [colorsd[x] for x in cell_order]
 
     # plot legend
-    plot_legend(colorsd, legend_fn)
+    plot_legend(colorsd, fn=legend_fn)
 
     # plot z-score
     auc_zscore = cal_zscore(auc_mtx)
@@ -262,7 +330,7 @@ def rss_heatmap(data: anndata.AnnData,
 
 def highlight_key(color_dir: dict,
                   new_value: str = '#8a8787',
-                  key_to_highlight: list = ['Cardiac muscle lineages']
+                  key_to_highlight=None
                   ) -> dict:
     """
     Highlight one or more interested keys/celltypes when plotting,
@@ -273,6 +341,8 @@ def highlight_key(color_dir: dict,
     :return dict
     """
     # assert key_to_highlight in color_dir.keys()
+    if key_to_highlight is None:
+        key_to_highlight = ['Cardiac muscle lineages']
     for k, v in color_dir.items():
         if k not in key_to_highlight:
             color_dir[k] = new_value
