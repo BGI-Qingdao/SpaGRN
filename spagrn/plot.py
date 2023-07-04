@@ -328,6 +328,88 @@ def rss_heatmap(data: anndata.AnnData,
     return g
 
 
+def rss_heatmap_uneven(data: anndata.AnnData,
+                auc_mtx: pd.DataFrame,
+                cluster_label: str,
+                rss_fn: str,
+                topn=5,
+                target_celltype: str= 'ventricular-specific CM',
+                save=True,
+                subset=True,
+                subset_size=5000,
+                fn='clusters_heatmap_top5.png',
+                legend_fn="rss_celltype_legend.png",
+                cluster_list=None):
+    """
+    Plot heatmap for Regulon specificity scores (RSS) value
+    :param data:
+    :param auc_mtx:
+    :param cluster_label:
+    :param rss_fn:
+    :param topn:
+    :param save:
+    :param subset:
+    :param subset_size:
+    :param fn:
+    :param legend_fn:
+    :param cluster_list: list of cluster names one prefer to use
+    :return:
+
+    Example:
+        # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
+        rss_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+                    rss_fn='regulon_specificity_scores.txt',
+                    cluster_list=['CNS', 'amnioserosa', 'carcass'])
+    """
+    if subset and len(data.obs) > subset_size:
+        fraction = subset_size / len(data.obs)
+        # do stratified sampling
+        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = draw_obs[cluster_label].sort_values()
+    else:
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = data.obs[cluster_label].sort_values()
+    celltypes = sorted(list(set(data.obs[cluster_label])))
+
+    # Regulon specificity scores (RSS) across predicted cell types
+    if rss_fn is None:
+        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+    else:
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
+    # Select the top 5 regulon_list from each cell type
+    topreg = get_top_regulons_uneven(data, cluster_label, rss_cellType, topn=topn, target_celltype=target_celltype)
+
+    if cluster_list is None:
+        cluster_list = celltypes.copy()
+    colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
+    colormap = [colorsd[x] for x in cell_order]
+
+    # plot legend
+    plot_legend(colorsd, fn=legend_fn)
+
+    # plot z-score
+    auc_zscore = cal_zscore(auc_mtx)
+    plot_data = auc_zscore[topreg].loc[cell_order.index]
+    sns.set(font_scale=1.2)
+    g = sns.clustermap(plot_data,
+                       annot=False,
+                       square=False,
+                       linecolor='gray',
+                       yticklabels=True, xticklabels=True,
+                       vmin=-3, vmax=3,
+                       cmap="YlGnBu",
+                       row_colors=colormap,
+                       row_cluster=False, col_cluster=True)
+    g.cax.set_visible(True)
+    g.ax_heatmap.set_yticks([])
+    g.ax_heatmap.set_ylabel('')
+    g.ax_heatmap.set_xlabel('')
+    if save:
+        plt.savefig(fn)
+    return g
+
+
 def highlight_key(color_dir: dict,
                   new_value: str = '#8a8787',
                   key_to_highlight=None
@@ -380,7 +462,10 @@ def plot_legend(color_dir, marker='o', linestyle='', numpoints=1, ncol=3, loc='c
     plt.close()
 
 
-def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_celltype: pd.DataFrame, topn: int) -> list:
+def get_top_regulons(data: anndata.AnnData,
+                     cluster_label: str,
+                     rss_celltype: pd.DataFrame,
+                     topn: int) -> list:
     """
     get top n regulons for each cell type based on regulon specificity scores (rss)
     :param data:
@@ -397,6 +482,33 @@ def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_celltype: pd
             list(rss_celltype.T[c].sort_values(ascending=False)[:topn].index)
         )
     topreg = list(set(topreg))
+    return topreg
+
+
+def get_top_regulons_uneven(data: anndata.AnnData,
+                            cluster_label: str,
+                            rss_celltype: pd.DataFrame,
+                            topn: int = 10,
+                            target_celltype: str = 'ventricular-specific CM',
+                            target_topn: int = 20) -> list:
+    """
+    get target_topn regulons for interested cell type and topn regulons for the rest cell types
+    based on regulon specificity scores (rss)
+    :param data:
+    :param cluster_label:
+    :param rss_celltype:
+    :param topn:
+    :param target_celltype:
+    :param target_topn:
+    :return: a list
+    """
+    cats = sorted(list(set(data.obs[cluster_label])))
+    topreg = []
+    for i, c in enumerate(cats):
+        if c == target_celltype:
+            topreg.extend(list(rss_celltype.T[c].sort_values(ascending=False)[:target_topn].index))
+        else:
+            topreg.extend(list(rss_celltype.T[c].sort_values(ascending=False)[:topn].index))
     return topreg
 
 
