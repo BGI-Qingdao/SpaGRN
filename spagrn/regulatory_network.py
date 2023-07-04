@@ -938,6 +938,7 @@ class InferRegulatoryNetwork:
         Example:
             grn.get_cytoscape(regulons, adjacencies, 'Gnb4', 'Gnb4_cytoscape.txt')
         """
+        tf = tf if '(+)' not in tf else tf.replace('(+)', '')
         # get TF data
         if isinstance(regulons, list):
             regulon_dict = cls.get_regulon_dict(regulons)
@@ -945,6 +946,7 @@ class InferRegulatoryNetwork:
             regulon_dict = regulons
         sub_adj = adjacencies[adjacencies.TF == tf]
         targets = regulon_dict[f'{tf}(+)']
+        print(len(targets))
         # all the target genes of the TF
         sub_df = sub_adj[sub_adj.target.isin(targets)]
         sub_df.to_csv(fn, index=False, sep='\t')
