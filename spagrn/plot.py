@@ -141,13 +141,13 @@ def plot_3d_reg(data: anndata.AnnData,
     Example:
         plot_3d_reg(data, 'spatial', auc_mtx, 'Zfp354c', view_vertical=30, view_horizontal=-30)
     """
-    if '(+)' not in reg_name:
-        reg_name = reg_name + '(+)'
+    reg_name = f'reg_name(+)' if '(+)' not in reg_name else reg_name
 
     # prepare plotting data
     cell_coor = data.obsm[pos_label]
-    auc_zscore = cal_zscore(auc_mtx)
-    sub_zscore = auc_zscore[reg_name]
+    #auc_zscore = cal_zscore(auc_mtx)
+    #sub_zscore = auc_zscore[reg_name]
+    sub_zscore = auc_mtx[reg_name]
 
     from mpl_toolkits.mplot3d import Axes3D
     fig = plt.figure()
@@ -247,7 +247,74 @@ def plot_3d_tf(data: anndata.AnnData,
     plt.close()
 
 
-def rss_heatmap(data: anndata.AnnData,
+def plot_3d_web(data, auc_mtx, reg_name, prefix='', zscale=1, xscale=1, yscale=1):
+    """
+
+    :param data:
+    :param auc_mtx:
+    :param reg_name:
+    :param prefix:
+    :param zscale:
+    :param xscale:
+    :param yscale:
+    :return:
+    """
+    coor = data.obsm['spatial_regis']
+
+    #import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    # auc_zscore = cal_zscore(auc_mtx)
+    # sub_zscore = auc_zscore[reg_name]
+    sub_zscore = auc_mtx[reg_name]
+    fig = make_subplots(rows=1, cols=1,
+                        specs=[[{'type': 'scene'}]],
+                        subplot_titles=('regulon'),
+                        )
+    cell = go.Scatter3d(
+        x=coor[:, 0],
+        y=coor[:, 1],
+        z=coor[:, 2],
+        mode='markers',
+        marker=dict(
+            size=2,
+            color=sub_zscore,
+            opacity=1,
+            colorbar=dict(thickness=20)
+        ),
+        legendgroup='cell',
+        showlegend=True,
+    )
+    fig.add_trace(cell, row=1, col=1)
+    axis = dict(
+        showbackground=False,
+        showline=True,
+        zeroline=False,
+        showgrid=True,
+        showticklabels=False,
+        title='',
+    )
+    fig.update_layout(
+        margin=dict(l=10, r=10, b=0, t=0),
+        # legend=set(obs[cluster_label]),
+        showlegend=True,
+        scene=dict(
+            aspectmode='data',
+            xaxis=axis,
+            yaxis=axis,
+            zaxis=axis,
+        ),
+        paper_bgcolor='rgba(0, 0, 0, 1)',
+        plot_bgcolor='rgba(0, 0, 0, 1)',
+    )
+    # manually force the z-axis to appear twice as big as the other two
+    fig.update_layout(scene_aspectmode='manual',
+                      scene_aspectratio=dict(x=xscale, y=yscale, z=zscale))
+    fig.write_html(f'{prefix}_regulon.html')
+
+
+def auc_heatmap(data: anndata.AnnData,
                 auc_mtx: pd.DataFrame,
                 cluster_label: str,
                 rss_fn: str,
@@ -257,7 +324,10 @@ def rss_heatmap(data: anndata.AnnData,
                 subset_size=5000,
                 fn='clusters_heatmap_top5.png',
                 legend_fn="rss_celltype_legend.png",
-                cluster_list=None):
+                cluster_list=None,
+                row_cluster=False,
+                col_cluster=True,
+                **kwargs):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
@@ -275,7 +345,7 @@ def rss_heatmap(data: anndata.AnnData,
 
     Example:
         # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
-        rss_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+        auc_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
                     rss_fn='regulon_specificity_scores.txt',
                     cluster_list=['CNS', 'amnioserosa', 'carcass'])
     """
@@ -318,7 +388,9 @@ def rss_heatmap(data: anndata.AnnData,
                        vmin=-3, vmax=3,
                        cmap="YlGnBu",
                        row_colors=colormap,
-                       row_cluster=False, col_cluster=True)
+                       row_cluster=row_cluster,
+                       col_cluster=col_cluster,
+                       **kwargs)
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
@@ -328,18 +400,18 @@ def rss_heatmap(data: anndata.AnnData,
     return g
 
 
-def rss_heatmap_uneven(data: anndata.AnnData,
-                auc_mtx: pd.DataFrame,
-                cluster_label: str,
-                rss_fn: str,
-                topn=5,
-                target_celltype: str= 'ventricular-specific CM',
-                save=True,
-                subset=True,
-                subset_size=5000,
-                fn='clusters_heatmap_top5.png',
-                legend_fn="rss_celltype_legend.png",
-                cluster_list=None):
+def auc_heatmap_uneven(data: anndata.AnnData,
+                       auc_mtx: pd.DataFrame,
+                       cluster_label: str,
+                       rss_fn: str,
+                       topn=5,
+                       target_celltype: str= 'ventricular-specific CM',
+                       save=True,
+                       subset=True,
+                       subset_size=5000,
+                       fn='clusters_heatmap_top5.png',
+                       legend_fn="rss_celltype_legend.png",
+                       cluster_list=None):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
@@ -357,7 +429,7 @@ def rss_heatmap_uneven(data: anndata.AnnData,
 
     Example:
         # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
-        rss_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+        auc_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
                     rss_fn='regulon_specificity_scores.txt',
                     cluster_list=['CNS', 'amnioserosa', 'carcass'])
     """
