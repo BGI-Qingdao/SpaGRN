@@ -581,6 +581,7 @@ def get_top_regulons_uneven(data: anndata.AnnData,
             topreg.extend(list(rss_celltype.T[c].sort_values(ascending=False)[:target_topn].index))
         else:
             topreg.extend(list(rss_celltype.T[c].sort_values(ascending=False)[:topn].index))
+    topreg = list(set(topreg))
     return topreg
 
 
