@@ -482,6 +482,309 @@ def auc_heatmap_uneven(data: anndata.AnnData,
     return g
 
 
+def auc_heatmap_reorder(data: anndata.AnnData,
+                       auc_mtx: pd.DataFrame,
+                       cluster_label: str,
+                       rss_fn: str,
+                       order_fn: str,
+                       target_celltype: str= 'ventricular-specific CM',
+                       save=True,
+                       subset=True,
+                       subset_size=5000,
+                       fn='clusters_heatmap_top5.png',
+                       legend_fn="rss_celltype_legend.png",
+                       cluster_list=None):
+    """
+    Plot heatmap for Regulon specificity scores (RSS) value
+    :param data:
+    :param auc_mtx:
+    :param cluster_label:
+    :param rss_fn:
+    :param topn:
+    :param save:
+    :param subset:
+    :param subset_size:
+    :param fn:
+    :param legend_fn:
+    :param cluster_list: list of cluster names one prefer to use
+    :return:
+
+    Example:
+        # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
+        auc_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+                    rss_fn='regulon_specificity_scores.txt',
+                    cluster_list=['CNS', 'amnioserosa', 'carcass'])
+    """
+    if subset and len(data.obs) > subset_size:
+        fraction = subset_size / len(data.obs)
+        # do stratified sampling
+        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = draw_obs[cluster_label].sort_values()
+    else:
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = data.obs[cluster_label].sort_values()
+    celltypes = sorted(list(set(data.obs[cluster_label])))
+
+    # Regulon specificity scores (RSS) across predicted cell types
+    if rss_fn is None:
+        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+    else:
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
+   
+    # load regulon order list
+    with open(order_fn,'r') as f:
+        topreg=f.read().splitlines()
+    print(topreg)
+
+    if cluster_list is None:
+        cluster_list = celltypes.copy()
+    colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
+    colormap = [colorsd[x] for x in cell_order]
+
+    # plot legend
+    #plot_legend(colorsd, fn=legend_fn)
+
+    # plot z-score
+    auc_zscore = cal_zscore(auc_mtx)
+    plot_data = auc_zscore[topreg].loc[cell_order.index]
+    sns.set(font_scale=1.2)
+    g = sns.clustermap(plot_data,
+                       annot=False,
+                       square=False,
+                       linecolor='gray',
+                       yticklabels=True, xticklabels=True,
+                       vmin=-1.5, vmax=2.5,
+                       cmap="YlGnBu",
+                       row_colors=colormap,
+                       row_cluster=False, col_cluster=False)
+    g.cax.set_visible(True)
+    g.ax_heatmap.set_yticks([])
+    g.ax_heatmap.set_ylabel('')
+    g.ax_heatmap.set_xlabel('')
+    if save:
+        plt.savefig(fn)
+    return g
+
+
+def auc_heatmap_reorder2(data: anndata.AnnData,
+                        auc_mtx: pd.DataFrame,
+                        cluster_label: str,
+                        rss_fn: str,
+                        order_fn: str,
+                        target_celltype: str = 'ventricular-specific CM',
+                        save=True,
+                        subset=True,
+                        subset_size=5000,
+                        fn='clusters_heatmap_top5.png',
+                        legend_fn="rss_celltype_legend.png",
+                        cluster_list=None):
+    """
+    Plot heatmap for Regulon specificity scores (RSS) value
+    :param data:
+    :param auc_mtx:
+    :param cluster_label:
+    :param rss_fn:
+    :param save:
+    :param subset:
+    :param subset_size:
+    :param fn:
+    :param legend_fn:
+    :param cluster_list: list of cluster names one prefer to use
+    :return:
+
+    Example:
+        # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
+        auc_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+                    rss_fn='regulon_specificity_scores.txt',
+                    cluster_list=['CNS', 'amnioserosa', 'carcass'])
+    """
+    if subset and len(data.obs) > subset_size:
+        fraction = subset_size / len(data.obs)
+        # do stratified sampling
+        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = draw_obs[cluster_label].sort_values()
+    else:
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = data.obs[cluster_label].sort_values()
+    print(cell_order[:3])
+    celltypes = sorted(list(set(data.obs[cluster_label])))
+
+    # Regulon specificity scores (RSS) across predicted cell types
+    if rss_fn is None:
+        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+    else:
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
+
+    # load regulon order list
+    with open(order_fn, 'r') as f:
+        topreg = f.read().splitlines()
+    print(topreg)
+
+    # if cluster_list is None:
+    #     cluster_list = celltypes.copy()
+    # colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
+    # colormap = [colorsd[x] for x in cell_order]
+
+
+    # plot z-score
+    auc_zscore = cal_zscore(auc_mtx)
+    plot_data = auc_zscore[topreg].loc[cell_order.index]
+    # calculate mean values for each celltype
+    plot_data['celltype'] = cell_order
+    plot_data = plot_data.groupby(['celltype']).mean()
+    print(plot_data)
+    # from sklearn.preprocessing import MinMaxScaler
+    # scaler = MinMaxScaler()
+    # plot_data_scaled = pd.DataFrame(scaler.fit_transform(plot_data), columns=plot_data.columns)
+
+    colorsd = dict((i, c) for i, c in zip(plot_data.index, COLORS))
+    print(colorsd)
+    colormap = [colorsd[x] for x in plot_data.index]
+    plot_legend(colorsd, fn=legend_fn)
+
+    sns.set(font_scale=1.2)
+    g = sns.clustermap(plot_data,
+                       annot=False,
+                       square=False,
+                       linecolor='gray',
+                       yticklabels=True, xticklabels=True,
+                       vmin=0.5, vmax=2,
+                       cmap="YlGnBu",
+                       row_colors=colormap,
+                       row_cluster=False, col_cluster=False)  #YlGnBu, RdYlBu
+    g.cax.set_visible(True)
+    g.ax_heatmap.set_yticks([])
+    g.ax_heatmap.set_ylabel('')
+    g.ax_heatmap.set_xlabel('')
+    if save:
+        plt.tight_layout()
+        plt.savefig(fn)
+    return g
+
+
+def auc_heatmap_reorder3(data: anndata.AnnData,
+                        auc_mtx: pd.DataFrame,
+                        cluster_label: str,
+                        rss_fn: str,
+                        order_fn: str,
+                        target_celltype: str = 'ventricular-specific CM',
+                        save=True,
+                        subset=True,
+                        subset_size=5000,
+                        fn='clusters_heatmap_top5.png',
+                        legend_fn="rss_celltype_legend.png",
+                        cluster_list=None):
+    """
+    Plot heatmap for Regulon specificity scores (RSS) value
+    :param data:
+    :param auc_mtx:
+    :param cluster_label:
+    :param rss_fn:
+    :param save:
+    :param subset:
+    :param subset_size:
+    :param fn:
+    :param legend_fn:
+    :param cluster_list: list of cluster names one prefer to use
+    :return:
+
+    Example:
+        # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
+        auc_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+                    rss_fn='regulon_specificity_scores.txt',
+                    cluster_list=['CNS', 'amnioserosa', 'carcass'])
+    """
+    if subset and len(data.obs) > subset_size:
+        fraction = subset_size / len(data.obs)
+        # do stratified sampling
+        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = draw_obs[cluster_label].sort_values()
+    else:
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = data.obs[cluster_label].sort_values()
+    print(cell_order[:3])
+    celltypes = sorted(list(set(data.obs[cluster_label])))
+
+    # Regulon specificity scores (RSS) across predicted cell types
+    if rss_fn is None:
+        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+    else:
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
+
+    # load regulon order list
+    with open(order_fn, 'r') as f:
+        topreg = f.read().splitlines()
+    print(topreg)
+
+    if cluster_list is None:
+        cluster_list = celltypes.copy()
+    colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
+    colormap = [colorsd[x] for x in cell_order]
+
+
+    # plot z-score
+    auc_zscore = cal_zscore(auc_mtx)
+    plot_data = auc_zscore[topreg].loc[cell_order.index]
+    # calculate mean values for each celltype
+    plot_data['celltype'] = cell_order
+    #plot_data = plot_data.groupby(['celltype']).sort_values()
+
+    #plot_data = plot_data.sort_values(list(plot_data.columns), ascending=False).groupby('celltype').to_frame()
+
+    plot_data = plot_data.groupby(["celltype"], sort=False).apply(lambda x: x.sort_values(list(plot_data.columns), ascending=False))#.reset_index(drop=True)
+
+    print(plot_data)
+    colormap = [colorsd[x] for x in plot_data.celltype]
+
+    sns.set(font_scale=1.2)
+    g = sns.clustermap(plot_data.drop(['celltype'], axis=1),
+                       annot=False,
+                       square=False,
+                       linecolor='gray',
+                       yticklabels=True, xticklabels=True,
+                       vmin=-1.5, vmax=2.5,
+                       cmap="YlGnBu",
+                       row_colors=colormap,
+                       row_cluster=False, col_cluster=False)  #YlGnBu, RdYlBu
+    g.cax.set_visible(True)
+    g.ax_heatmap.set_yticks([])
+    g.ax_heatmap.set_ylabel('')
+    g.ax_heatmap.set_xlabel('')
+    if save:
+        plt.tight_layout()
+        plt.savefig(fn)
+    return g
+
+
+def func(df):
+    print(df.head().index)
+    total_cell_order = []
+    ct = df['celltype']
+    celltypes = sorted(set(ct))
+    for celltype in celltypes:
+        ct_df = df[df.celltype==celltype]
+        g = sns.clustermap(ct_df.drop(['celltype'], axis=1),
+                           annot=False,
+                           square=False,
+                           linecolor='gray',
+                           yticklabels=True, xticklabels=True,
+                           vmin=-1.5, vmax=2.5,
+                           cmap="YlGnBu",
+                           row_cluster=False, col_cluster=False)  # YlGnBu, RdYlBu
+        labels = get_labels(g)
+        total_cell_order += labels
+        return total_cell_order
+
+
+def get_labels(clustermap):
+    labels = clustermap.ax_heatmap.yaxis.get_majorticklabels()
+    cluster_labels = [label.get_text() for label in labels]
+    return cluster_labels
+
+
 def highlight_key(color_dir: dict,
                   new_value: str = '#8a8787',
                   key_to_highlight=None
@@ -597,6 +900,24 @@ def cal_zscore(auc_mtx: pd.DataFrame, save=False) -> pd.DataFrame:
     if save:
         auc_zscore.to_csv('auc_zscore.csv', index=False)
     return auc_zscore
+
+
+def go_bar(fn):
+    name = fn.split('.')[0]
+    # df = pd.read_excel(fn)
+    df = pd.read_csv(fn)
+    print(df.head())
+    cm = 1 / 2.54
+    y_pos = range(len(df.Description))
+    plt.figure(figsize=(20 * cm, 12 * cm))
+    ax = plt.barh(y_pos, df['LogP'])
+    plt.yticks(y_pos, labels=df.Description)
+    plt.tick_params(axis='y', length=0)
+    # ax.yaxis.tick_right()
+    # plt.yticks([])
+    plt.tight_layout()
+    plt.savefig(f'{name}.pdf', format='pdf')
+    plt.close()
 
 
 if __name__ == '__main__':
