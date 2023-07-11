@@ -39,7 +39,7 @@ conda install -c bioconda spagrn
 SpaGRN can be imported as:
 ```
 from spagrn import InferRegulatoryNetwork as irn
-from spagrn import PlotRegulatoryNetwork as prn
+from spagrn import plot as prn
 ```
 
 Dependencies:
@@ -120,7 +120,7 @@ prn.rss_heatmap(data,
 ### 2. Spatial Plots
 Plot spatial distribution map of a regulon on a 2D plane:
 ```
-from spagrn import PlotRegulatoryNetwork as prn
+from spagrn import plot as prn
 
 prn.plot_2d_reg(data, 'spatial', auc_mtx, reg_name='Egr3')
 ```
