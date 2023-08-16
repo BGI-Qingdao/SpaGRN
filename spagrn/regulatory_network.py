@@ -11,10 +11,12 @@
 
 # python core modules
 import os
+import re
 import csv
 import sys
 import logging
-from typing import Union
+from functools import partial
+from typing import Callable, Sequence, Type, TypeVar
 
 # third party modules
 import json
@@ -26,16 +28,17 @@ import pandas as pd
 import numpy as np
 import scanpy as sc
 from copy import deepcopy
+import matplotlib.pyplot as plt
 from multiprocessing import cpu_count
 from pyscenic.export import export2loom
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 from arboreto.algo import grnboost2
 from ctxcore.rnkdb import FeatherRankingDatabase as RankingDatabase
-from pyscenic.prune import prune2df, df2regulons
 from pyscenic.utils import modules_from_adjacencies
 from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
+from pyscenic.transform import df2regulons
 
 # modules in self project
 from .spa_logger import logger
@@ -154,6 +157,8 @@ class ScoexpMatrix:
         maxV = ret['importance0'].max()
         ret['importance'] = ret['importance0'] / maxV
         ret['importance'] = ret['importance'] * 1000
+        plt.hist(ret['importance'])
+        plt.savefig('celltrek_importance.png')
         ret.drop(columns=['importance0'], inplace=True)
         ret['valid'] = ret.apply(lambda row: row['TF'] != row['target'], axis=1)
         ret = ret[ret['valid']].copy()
@@ -663,7 +668,7 @@ class InferRegulatoryNetwork:
         return dbs
 
     # ------------------------------------------------------#
-    #           step2:               #
+    #            step2:  FILTER TFS AND TARGETS             #
     # ------------------------------------------------------#
     @staticmethod
     def get_modules(adjacencies: pd.DataFrame,
@@ -733,7 +738,7 @@ class InferRegulatoryNetwork:
         if num_workers is None:
             num_workers = cpu_count()
         with ProgressBar():
-            df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)
+            df = self.prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)
 
         regulon_list = df2regulons(df)
         self.regulon_list = regulon_list
@@ -1077,8 +1082,8 @@ class InferRegulatoryNetwork:
 
         # save results
         # if save:
-            # logger.info('saving results...')
-            # self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
-            # self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
-            # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
-            # logger.info('results saving DONE')
+        # logger.info('saving results...')
+        # self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
+        # self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
+        # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
+        # logger.info('results saving DONE')
