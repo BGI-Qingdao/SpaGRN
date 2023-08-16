@@ -46,6 +46,7 @@ COLORS = [
     '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
     '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
 ]
+cm = 1/2.54
 
 
 # dotplot method for anndata
@@ -456,7 +457,7 @@ def auc_heatmap_uneven(data: anndata.AnnData,
         cluster_list = celltypes.copy()
     colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
     colormap = [colorsd[x] for x in cell_order]
-
+    print(colorsd)
     # plot legend
     plot_legend(colorsd, fn=legend_fn)
 
@@ -470,9 +471,10 @@ def auc_heatmap_uneven(data: anndata.AnnData,
                        linecolor='gray',
                        yticklabels=True, xticklabels=True,
                        vmin=-3, vmax=3,
-                       cmap="YlGnBu",
+                       cmap='magma',#"YlGnBu",
                        row_colors=colormap,
-                       row_cluster=False, col_cluster=True)
+                       row_cluster=False, col_cluster=True,
+                       figsize=(3*cm,5.5*cm))
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
@@ -541,6 +543,7 @@ def auc_heatmap_reorder(data: anndata.AnnData,
         cluster_list = celltypes.copy()
     colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
     colormap = [colorsd[x] for x in cell_order]
+    print(colorsd)
 
     # plot legend
     #plot_legend(colorsd, fn=legend_fn)
@@ -557,7 +560,8 @@ def auc_heatmap_reorder(data: anndata.AnnData,
                        vmin=-1.5, vmax=2.5,
                        cmap="YlGnBu",
                        row_colors=colormap,
-                       row_cluster=False, col_cluster=False)
+                       row_cluster=False, col_cluster=False,
+                       figsize=(3*cm,5.5*cm))
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
@@ -644,20 +648,22 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
     colormap = [colorsd[x] for x in plot_data.index]
     plot_legend(colorsd, fn=legend_fn)
 
-    sns.set(font_scale=1.2)
+    #sns.set(font_scale=1.2)
     g = sns.clustermap(plot_data,
                        annot=False,
                        square=False,
                        linecolor='gray',
-                       yticklabels=True, xticklabels=True,
-                       vmin=0.5, vmax=2,
-                       cmap="YlGnBu",
+                       yticklabels=True, xticklabels=5,
+                       vmin=-1, vmax=1,
+                       cmap="magma",
                        row_colors=colormap,
-                       row_cluster=False, col_cluster=False)  #YlGnBu, RdYlBu
+                       row_cluster=False, col_cluster=False,
+                       figsize=(3*3*cm,5.5*3*cm))  #YlGnBu, RdYlBu
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
+    #plt.setp(g.ax_heatmap.xaxis.get_majorticklabels(), rotation=45)
     if save:
         plt.tight_layout()
         plt.savefig(fn)
@@ -730,12 +736,6 @@ def auc_heatmap_reorder3(data: anndata.AnnData,
     plot_data = auc_zscore[topreg].loc[cell_order.index]
     # calculate mean values for each celltype
     plot_data['celltype'] = cell_order
-    plot_data = plot_data.groupby(['celltype']).mean()
-    print(plot_data)
-    colormap = [colorsd[x] for x in plot_data.index]
-
-    sns.set(font_scale=1.2)
-    g = sns.clustermap(plot_data,
     #plot_data = plot_data.groupby(['celltype']).sort_values()
 
     #plot_data = plot_data.sort_values(list(plot_data.columns), ascending=False).groupby('celltype').to_frame()
@@ -751,7 +751,7 @@ def auc_heatmap_reorder3(data: anndata.AnnData,
                        square=False,
                        linecolor='gray',
                        yticklabels=True, xticklabels=True,
-                       vmin=-1.5, vmax=2.5,
+                       vmin=-3, vmax=3,
                        cmap="YlGnBu",
                        row_colors=colormap,
                        row_cluster=False, col_cluster=False)  #YlGnBu, RdYlBu
