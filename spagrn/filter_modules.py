@@ -26,7 +26,6 @@ def intersection_ci(iterableA, iterableB, key=lambda x: x):
         return d
 
     A, B = unify(iterableA), unify(iterableB)
-    # return [(A[k], B[k]) for k in A if k in B]
     matched = []
     for k in A:
         if k in B:
@@ -35,7 +34,6 @@ def intersection_ci(iterableA, iterableB, key=lambda x: x):
 
 
 adjacencies = pd.read_csv(sys.argv[1])
-# fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L3_pca.h5ad'
 adata = sc.read_h5ad(sys.argv[2])
 matrix = adata.to_df()
 regulons = json.load(open(sys.argv[3]))
@@ -79,10 +77,6 @@ niche_mouse = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resourc
 receptor_tf = {}
 total_receptor = set()
 for tf, targets in filtered.items():
-    # trg = [i.upper() for i in targets]
-    # rtf1 = set(niche_human['to']).intersection(set(trg))
-    # rtf2 = set(niche_mouse['to']).intersection(set(targets))
-    # rtf1 = set([word[0] + word[1:].lower() for word in rtf1])
     rtf1 = intersection_ci(set(niche_human['to']), set(targets), key=str.lower)
     rtf2 = intersection_ci(set(niche_mouse['to']), set(targets), key=str.lower)
     rtf = set(rtf1) | set(rtf2)
