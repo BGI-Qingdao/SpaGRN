@@ -12,17 +12,21 @@ from pyscenic.utils import modules_from_adjacencies
 '''
 python filter_modules.py adj.csv data.h5ad regulons.json
 '''
+
+
 def intersection_ci(iterableA, iterableB, key=lambda x: x):
     """Return the intersection of two iterables with respect to `key` function.
-
+    ci: case insensitive
     """
+
     def unify(iterable):
         d = {}
         for item in iterable:
             d.setdefault(key(item), []).append(item)
         return d
+
     A, B = unify(iterableA), unify(iterableB)
-    #return [(A[k], B[k]) for k in A if k in B]
+    # return [(A[k], B[k]) for k in A if k in B]
     matched = []
     for k in A:
         if k in B:
@@ -31,7 +35,7 @@ def intersection_ci(iterableA, iterableB, key=lambda x: x):
 
 
 adjacencies = pd.read_csv(sys.argv[1])
-#fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L3_pca.h5ad'
+# fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L3_pca.h5ad'
 adata = sc.read_h5ad(sys.argv[2])
 matrix = adata.to_df()
 regulons = json.load(open(sys.argv[3]))
@@ -94,19 +98,15 @@ with open(f'{prefix}_filtered_targets_receptor_total.txt', 'w') as f:
     f.writelines('\n'.join(list(total_receptor)))
 
 
-
-
-
 class StrIgnoreCase:
-  def __init__(self, val):
-    self.val = val
+    def __init__(self, val):
+        self.val = val
 
-  def __eq__(self, other):
-    if not isinstance(other, StrIgnoreCase):
-        return False
+    def __eq__(self, other):
+        if not isinstance(other, StrIgnoreCase):
+            return False
 
-    return self.val.lower() == other.val.lower()
+        return self.val.lower() == other.val.lower()
 
-  def __hash__(self):
-    return hash(self.val.lower())
-
+    def __hash__(self):
+        return hash(self.val.lower())
