@@ -39,6 +39,7 @@ from pyscenic.utils import modules_from_adjacencies
 from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
 from pyscenic.transform import df2regulons
+from pyscenic.prune import prune2df, df2regulons
 
 # modules in self project
 from .spa_logger import logger
@@ -174,7 +175,7 @@ class InferRegulatoryNetwork:
     Algorithms to inference Gene Regulatory Networks (GRN)
     """
 
-    def __init__(self, data, pos_label='spatial'):
+    def __init__(self, data=None, pos_label='spatial'):
         """
         Constructor of this Object.
         :param data:
@@ -580,6 +581,7 @@ class InferRegulatoryNetwork:
                        tf_list=None,
                        save=True,
                        jobs=None,
+                       cache=False,
                        fn: str = 'adj.csv',
                        **kwargs) -> pd.DataFrame:
         """
@@ -606,19 +608,20 @@ class InferRegulatoryNetwork:
             to the `n_neighbors`/`neighborhood_factor`-th neighbor.
         :param approx_neighbors: Use approximate nearest neighbors or exact scikit-learn neighbors. Only
             when hotspot initialized with `latent`.
-        :param fdr_threshold: Correlation theshold at which to stop assigning genes to modules
+        :param fdr_threshold: Correlation threshold at which to stop assigning genes to modules
         :param tf_list: predefined TF names
         :param save: if save results onto disk
         :param jobs: Number of parallel jobs to run
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
         """
-        if os.path.isfile('local_correlations.csv'):
+        if cache and os.path.isfile('local_correlations.csv'):
             local_correlations = pd.read_csv('local_correlations.csv', index_col=0)
-        elif os.path.isfile(fn):  # 2023-05-23: TODO: check what should be the index
-            local_correlations = pd.read_csv(fn)
-            return local_correlations
+        # elif os.path.isfile(fn):  # 2023-05-23: TODO: check what should be the index
+        #     local_correlations = pd.read_csv(fn)
+        #     return local_correlations
         else:
+            print(model, layer_key, latent_obsm_key, umi_counts_obs_key)
             hs = hotspot.Hotspot(data,
                                  layer_key=layer_key,
                                  model=model,
@@ -627,6 +630,9 @@ class InferRegulatoryNetwork:
                                  **kwargs)
             hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
             hs_results = hs.compute_autocorrelations()
+            #print('autocorrelations:')
+            #print(hs_results)
+            #hs_results.to_csv('autocorrelations.csv')
             hs_genes = hs_results.loc[hs_results.FDR < fdr_threshold].index  # Select genes
             local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
             local_correlations.to_csv('local_correlations.csv')
@@ -650,6 +656,10 @@ class InferRegulatoryNetwork:
 
         # remove if TF = target
         local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
+        # print(local_correlations['importance'].dtypes)
+        # local_correlations['importance'] = local_correlations['importance'].astype(float)
+        # local_correlations['importance'] = local_correlations['importance'] * 101
+        # local_correlations['importance'] = abs(local_correlations['importance'])
 
         if save:
             local_correlations.to_csv(fn, index=False)
@@ -737,9 +747,18 @@ class InferRegulatoryNetwork:
 
         if num_workers is None:
             num_workers = cpu_count()
+        # main function
+        # #1.
         with ProgressBar():
-            df = self.prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)
+            df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)  # rank_threshold
 
+        # 2023-09-14
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        print('prune_modules')
+        print(df)
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        # this function actually did two things. 1. get df, 2. turn df into list of Regulons
+        # #2.
         regulon_list = df2regulons(df)
         self.regulon_list = regulon_list
 
@@ -818,6 +837,8 @@ class InferRegulatoryNetwork:
             if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
                 logger.warning('auc matrix contains all zero columns')
             auc_mtx = auc_mtx.loc[:, ~auc_mtx.ne(0).any()]
+            # remove all zero columns (which have no variation at all)
+            auc_mtx = auc_mtx.loc[:, (auc_mtx != 0).any(axis=0)]
             return auc_mtx
 
         self.auc_mtx = auc_mtx
@@ -890,10 +911,10 @@ class InferRegulatoryNetwork:
     def to_loom(self, matrix: pd.DataFrame, auc_matrix: pd.DataFrame, regulons: list, fn: str = 'output.loom'):
         """
         Save GRN results in one loom file
+        :param fn:
         :param matrix:
         :param auc_matrix:
         :param regulons:
-        :param loom_fn:
         :return:
         """
         export2loom(ex_mtx=matrix, auc_mtx=auc_matrix,
@@ -973,8 +994,11 @@ class InferRegulatoryNetwork:
              model='bernoulli',
              latent_obsm_key='spatial',
              umi_counts_obs_key=None,
+             n_neighbors=30,
+             weighted_graph=False,
              cluster_label='annotation',  # TODO: shouldn't set default value
 
+             rho_mask_dropouts=False,
              noweights=None,
              normalize: bool = False):
         """
@@ -1046,9 +1070,30 @@ class InferRegulatoryNetwork:
                                               model=model,
                                               latent_obsm_key=latent_obsm_key,
                                               umi_counts_obs_key=umi_counts_obs_key,
+                                              n_neighbors=n_neighbors,
+                                              weighted_graph=weighted_graph,
+                                              cache=cache,
                                               fn=f'{prefix}_adj.csv')
 
-        modules = self.get_modules(adjacencies, df)
+        modules = self.get_modules(adjacencies, df, rho_mask_dropouts=rho_mask_dropouts)
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        print('1. modules:', type(modules[0]))
+        print('saving modules in pickle file')
+        import pickle
+        with open(f'{prefix}_modules.pkl', "wb") as f:
+            pickle.dump(modules, f)
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+
+        d = {}
+        for tf in tfs:
+            d[tf] = {}
+            tf_mods = [x for x in modules if x.transcription_factor == tf]
+            for i, mod in enumerate(tf_mods):
+                print(f'{tf} module {str(i)}: {len(mod.genes)} genes')
+                d[tf][f'module {str(i)}'] = list(mod.genes)
+        with open(f'{prefix}_before_cistarget.json', 'w') as f:
+            json.dump(d, f, indent=4)
+
 
         # 4. Regulons prediction aka cisTarget
         regulons = self.prune_modules(modules,
@@ -1063,8 +1108,16 @@ class InferRegulatoryNetwork:
                                       nes_threshold=self.params[method]["nes_threshold"],
                                       motif_similarity_fdr=self.params[method]["motif_similarity_fdr"])
 
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        print('regulons after prune_modules')
+        print(regulons)
+        print('2. regulons', type(regulons[0]))
         self.regulon_dict = self.get_regulon_dict(regulons)
         self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
+        print('saving regulons in pickle file')
+        with open(f'{prefix}_regulons.pkl', "wb") as f:
+            pickle.dump(regulons, f)
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
 
         # 5: Cellular enrichment (aka AUCell)
         auc_matrix = self.auc_activity_level(df,
@@ -1087,3 +1140,17 @@ class InferRegulatoryNetwork:
         # self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
         # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
         # logger.info('results saving DONE')
+
+
+def dict_to_df(json_fn):
+    """
+
+    :param json_fn:
+    :return:
+    """
+    import pandas as pd
+    import json
+    dic = json.load(open(json_fn))
+    df = pd.DataFrame([(key, var) for (key, L) in dic.items() for var in L], columns=['TF', 'targets'])
+    df.to_csv(f'{json_fn.strip(".json")}.csv', index=False)
+
