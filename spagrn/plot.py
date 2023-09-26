@@ -46,7 +46,7 @@ COLORS = [
     '#5901a3', '#8c3bff', '#a03a52', '#a1c8c8', '#f2007b', '#ff7752',
     '#bac389', '#15e18c', '#60383b', '#546744', '#380000', '#e252ff',
 ]
-cm = 1/2.54
+cm = 1 / 2.54
 
 
 # dotplot method for anndata
@@ -146,8 +146,8 @@ def plot_3d_reg(data: anndata.AnnData,
 
     # prepare plotting data
     cell_coor = data.obsm[pos_label]
-    #auc_zscore = cal_zscore(auc_mtx)
-    #sub_zscore = auc_zscore[reg_name]
+    # auc_zscore = cal_zscore(auc_mtx)
+    # sub_zscore = auc_zscore[reg_name]
     sub_zscore = auc_mtx[reg_name]
 
     from mpl_toolkits.mplot3d import Axes3D
@@ -181,17 +181,17 @@ def plot_3d_reg(data: anndata.AnnData,
 
 
 def plot_3d_tf(data: anndata.AnnData,
-                pos_label,
-                auc_mtx,
-                reg_name: str,
-                fn: str,
-                view_vertical=222,
-                view_horizontal=-80,
-                show_bg=False,
-                xscale=1,
-                yscale=1,
-                zscale=1,
-                **kwargs):
+               pos_label,
+               auc_mtx,
+               reg_name: str,
+               fn: str,
+               view_vertical=222,
+               view_horizontal=-80,
+               show_bg=False,
+               xscale=1,
+               yscale=1,
+               zscale=1,
+               **kwargs):
     """
     Plot genes of one regulon on a 3D map
     :param pos_label:
@@ -262,7 +262,7 @@ def plot_3d_web(data, auc_mtx, reg_name, prefix='', zscale=1, xscale=1, yscale=1
     """
     coor = data.obsm['spatial_regis']
 
-    #import plotly.express as px
+    # import plotly.express as px
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
@@ -379,7 +379,15 @@ def auc_heatmap(data: anndata.AnnData,
 
     # plot z-score
     auc_zscore = cal_zscore(auc_mtx)
-    plot_data = auc_zscore[topreg].loc[cell_order.index]
+    # 2023-09-22
+    # print(auc_zscore.index)
+    # auc_zscore.index = auc_zscore.index.astype(str)
+    # 2023-09-25
+    try:
+        plot_data = auc_zscore[topreg].loc[cell_order.index]
+    except KeyError:
+        com_topreg = list(set(topreg).intersection(set(auc_zscore.columns)))
+        plot_data = auc_zscore[com_topreg].loc[cell_order.index]
     sns.set(font_scale=1.2)
     g = sns.clustermap(plot_data,
                        annot=False,
@@ -406,7 +414,7 @@ def auc_heatmap_uneven(data: anndata.AnnData,
                        cluster_label: str,
                        rss_fn: str,
                        topn=5,
-                       target_celltype: str= 'ventricular-specific CM',
+                       target_celltype: str = 'ventricular-specific CM',
                        save=True,
                        subset=True,
                        subset_size=5000,
@@ -471,10 +479,10 @@ def auc_heatmap_uneven(data: anndata.AnnData,
                        linecolor='gray',
                        yticklabels=True, xticklabels=True,
                        vmin=-3, vmax=3,
-                       cmap='magma',#"YlGnBu",
+                       cmap='magma',  # "YlGnBu",
                        row_colors=colormap,
                        row_cluster=False, col_cluster=True,
-                       figsize=(3*cm,5.5*cm))
+                       figsize=(3 * cm, 5.5 * cm))
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
@@ -485,17 +493,17 @@ def auc_heatmap_uneven(data: anndata.AnnData,
 
 
 def auc_heatmap_reorder(data: anndata.AnnData,
-                       auc_mtx: pd.DataFrame,
-                       cluster_label: str,
-                       rss_fn: str,
-                       order_fn: str,
-                       target_celltype: str= 'ventricular-specific CM',
-                       save=True,
-                       subset=True,
-                       subset_size=5000,
-                       fn='clusters_heatmap_top5.png',
-                       legend_fn="rss_celltype_legend.png",
-                       cluster_list=None):
+                        auc_mtx: pd.DataFrame,
+                        cluster_label: str,
+                        rss_fn: str,
+                        order_fn: str,
+                        target_celltype: str = 'ventricular-specific CM',
+                        save=True,
+                        subset=True,
+                        subset_size=5000,
+                        fn='clusters_heatmap_top5.png',
+                        legend_fn="rss_celltype_legend.png",
+                        cluster_list=None):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
@@ -533,10 +541,10 @@ def auc_heatmap_reorder(data: anndata.AnnData,
         rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
     else:
         rss_cellType = pd.read_csv(rss_fn, index_col=0)
-   
+
     # load regulon order list
-    with open(order_fn,'r') as f:
-        topreg=f.read().splitlines()
+    with open(order_fn, 'r') as f:
+        topreg = f.read().splitlines()
     print(topreg)
 
     if cluster_list is None:
@@ -546,7 +554,7 @@ def auc_heatmap_reorder(data: anndata.AnnData,
     print(colorsd)
 
     # plot legend
-    #plot_legend(colorsd, fn=legend_fn)
+    # plot_legend(colorsd, fn=legend_fn)
 
     # plot z-score
     auc_zscore = cal_zscore(auc_mtx)
@@ -561,7 +569,7 @@ def auc_heatmap_reorder(data: anndata.AnnData,
                        cmap="YlGnBu",
                        row_colors=colormap,
                        row_cluster=False, col_cluster=False,
-                       figsize=(3*cm,5.5*cm))
+                       figsize=(3 * cm, 5.5 * cm))
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
@@ -572,17 +580,17 @@ def auc_heatmap_reorder(data: anndata.AnnData,
 
 
 def auc_heatmap_reorder2(data: anndata.AnnData,
-                        auc_mtx: pd.DataFrame,
-                        cluster_label: str,
-                        rss_fn: str,
-                        order_fn: str,
-                        target_celltype: str = 'ventricular-specific CM',
-                        save=True,
-                        subset=True,
-                        subset_size=5000,
-                        fn='clusters_heatmap_top5.png',
-                        legend_fn="rss_celltype_legend.png",
-                        cluster_list=None):
+                         auc_mtx: pd.DataFrame,
+                         cluster_label: str,
+                         rss_fn: str,
+                         order_fn: str,
+                         target_celltype: str = 'ventricular-specific CM',
+                         save=True,
+                         subset=True,
+                         subset_size=5000,
+                         fn='clusters_heatmap_top5.png',
+                         legend_fn="rss_celltype_legend.png",
+                         cluster_list=None):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
@@ -631,7 +639,6 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
     # colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
     # colormap = [colorsd[x] for x in cell_order]
 
-
     # plot z-score
     auc_zscore = cal_zscore(auc_mtx)
     plot_data = auc_zscore[topreg].loc[cell_order.index]
@@ -648,7 +655,7 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
     colormap = [colorsd[x] for x in plot_data.index]
     plot_legend(colorsd, fn=legend_fn)
 
-    #sns.set(font_scale=1.2)
+    # sns.set(font_scale=1.2)
     g = sns.clustermap(plot_data,
                        annot=False,
                        square=False,
@@ -658,12 +665,12 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
                        cmap="magma",
                        row_colors=colormap,
                        row_cluster=False, col_cluster=False,
-                       figsize=(3*3*cm,5.5*3*cm))  #YlGnBu, RdYlBu
+                       figsize=(3 * 3 * cm, 5.5 * 3 * cm))  # YlGnBu, RdYlBu
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
-    #plt.setp(g.ax_heatmap.xaxis.get_majorticklabels(), rotation=45)
+    # plt.setp(g.ax_heatmap.xaxis.get_majorticklabels(), rotation=45)
     if save:
         plt.tight_layout()
         plt.savefig(fn)
@@ -671,17 +678,17 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
 
 
 def auc_heatmap_reorder3(data: anndata.AnnData,
-                        auc_mtx: pd.DataFrame,
-                        cluster_label: str,
-                        rss_fn: str,
-                        order_fn: str,
-                        target_celltype: str = 'ventricular-specific CM',
-                        save=True,
-                        subset=True,
-                        subset_size=5000,
-                        fn='clusters_heatmap_top5.png',
-                        legend_fn="rss_celltype_legend.png",
-                        cluster_list=None):
+                         auc_mtx: pd.DataFrame,
+                         cluster_label: str,
+                         rss_fn: str,
+                         order_fn: str,
+                         target_celltype: str = 'ventricular-specific CM',
+                         save=True,
+                         subset=True,
+                         subset_size=5000,
+                         fn='clusters_heatmap_top5.png',
+                         legend_fn="rss_celltype_legend.png",
+                         cluster_list=None):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
@@ -730,17 +737,17 @@ def auc_heatmap_reorder3(data: anndata.AnnData,
     colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
     colormap = [colorsd[x] for x in cell_order]
 
-
     # plot z-score
     auc_zscore = cal_zscore(auc_mtx)
     plot_data = auc_zscore[topreg].loc[cell_order.index]
     # calculate mean values for each celltype
     plot_data['celltype'] = cell_order
-    #plot_data = plot_data.groupby(['celltype']).sort_values()
+    # plot_data = plot_data.groupby(['celltype']).sort_values()
 
-    #plot_data = plot_data.sort_values(list(plot_data.columns), ascending=False).groupby('celltype').to_frame()
+    # plot_data = plot_data.sort_values(list(plot_data.columns), ascending=False).groupby('celltype').to_frame()
 
-    plot_data = plot_data.groupby(["celltype"], sort=False).apply(lambda x: x.sort_values(list(plot_data.columns), ascending=False))#.reset_index(drop=True)
+    plot_data = plot_data.groupby(["celltype"], sort=False).apply(
+        lambda x: x.sort_values(list(plot_data.columns), ascending=False))  # .reset_index(drop=True)
 
     print(plot_data)
     colormap = [colorsd[x] for x in plot_data.celltype]
@@ -754,7 +761,7 @@ def auc_heatmap_reorder3(data: anndata.AnnData,
                        vmin=-3, vmax=3,
                        cmap="YlGnBu",
                        row_colors=colormap,
-                       row_cluster=False, col_cluster=False)  #YlGnBu, RdYlBu
+                       row_cluster=False, col_cluster=False)  # YlGnBu, RdYlBu
     g.cax.set_visible(True)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
@@ -771,7 +778,7 @@ def func(df):
     ct = df['celltype']
     celltypes = sorted(set(ct))
     for celltype in celltypes:
-        ct_df = df[df.celltype==celltype]
+        ct_df = df[df.celltype == celltype]
         g = sns.clustermap(ct_df.drop(['celltype'], axis=1),
                            annot=False,
                            square=False,
@@ -857,6 +864,12 @@ def get_top_regulons(data: anndata.AnnData,
     """
     # Select the top 5 regulon_list from each cell type
     cats = sorted(list(set(data.obs[cluster_label])))
+    # 2023-09-22
+    # all cell type labels should be strings
+    if not all(isinstance(x, str) for x in cats):
+        cats = [str(x) for x in cats]
+    rss_celltype.index = rss_celltype.index.astype(str)
+    # 2023-09-22
     topreg = []
     for i, c in enumerate(cats):
         topreg.extend(
@@ -926,8 +939,142 @@ def go_bar(fn):
     plt.close()
 
 
+def plot_3D_legend(adata, cluster_label='leiden', prefix=''):
+    """
+    :param adata:
+    :param cluster_label:
+    :param is_deconv:
+    :param prefix:
+    :return:
+
+    Example:
+        plot_3D_legend(adata, cluster_label='leiden', prefix=n)
+    """
+    import plotly.express as px
+
+    obs = adata.obs.copy()
+    obs['x'] = adata.obsm['spatial'][:, 0]
+    obs['y'] = adata.obsm['spatial'][:, 1]
+    obs['z'] = adata.obsm['spatial'][:, 2]
+    print(obs)
+    xs = adata.obsm['spatial'][:, 0]
+    ys = adata.obsm['spatial'][:, 1]
+    zs = adata.obsm['spatial'][:, 2]
+    fig = px.scatter_3d(obs,
+                        x=xs,
+                        y=ys,
+                        z=zs,
+                        color=cluster_label,
+                        opacity=0.7,
+                        )
+    fig.update_traces(marker_size=3)
+    fig.layout.update(
+        scene=dict(aspectmode='data')
+    )
+    fig.write_html(f'{prefix}_{cluster_label}.html')
+
+
+def spatial_plot_2d(adata, color='annotation', prefix='2d_plot'):
+    """
+
+    :param adata:
+    :param color:
+    :param prefix:
+    :return:
+
+    Example:
+        spatial_plot_2d(adata, color='leiden', prefix=prefix)
+    """
+    import matplotlib
+    palette = list(matplotlib.colors.CSS4_COLORS.values())
+
+    x, y = zip(*adata.obsm['spatial'])
+    annotations = adata.obs[color].unique()
+    colors = palette[:len(annotations)]
+    color_dict = dict((anno, color) for anno, color in zip(annotations, colors))
+    c = [color_dict[anno] for anno in adata.obs[color]]
+    plt.scatter(x, y, s=1, c=c, lw=0, edgecolors='none')
+    plt.gca().set_aspect('equal')
+    plt.show()
+    plt.savefig(f'{prefix}_{color}_2d.png')
+    plt.close()
+
+
+def plot_2d(data: anndata.AnnData,
+            pos_label,
+            auc_mtx,
+            reg_name: str,
+            fn: str,
+            **kwargs):
+    """
+    Plot genes of one regulon on a 2D map
+    :param pos_label:
+    :param data:
+    :param auc_mtx:
+    :param reg_name:
+    :param fn:
+    :return:
+    """
+    if '(+)' not in reg_name:
+        reg_name = reg_name + '(+)'
+
+    cell_coor = data.obsm[pos_label].to_numpy()
+    auc_zscore = cal_zscore(auc_mtx)
+    # prepare plotting data
+    sub_zscore = auc_zscore[reg_name]
+    # sort data points by zscore (low to high), because first dot will be covered by latter dots
+    zorder = np.argsort(sub_zscore.values)
+    # plot cell/bin dot, x y coor
+    sc = plt.scatter(cell_coor[:, 0][zorder],
+                     cell_coor[:, 1][zorder],
+                     c=sub_zscore.iloc[zorder],
+                     marker='.',
+                     edgecolors='none',
+                     cmap='plasma',
+                     lw=0,
+                     **kwargs)
+    plt.axis("equal")
+    plt.box(False)
+    plt.axis('off')
+    plt.colorbar(sc, shrink=0.35)
+    plt.savefig(fn, format='png')
+    plt.close()
+
+
+def plot_celltype(adata, color='annotation', prefix='2d_plot', custom_labels=None):
+    """
+
+    :param adata:
+    :param color:
+    :param prefix:
+    :param custom_labels: labels associate with cell types. e.g. it's celltype1 in annotation, but you want to label it as 'ct1'
+    :return:
+
+    Example:
+        spatial_plot_2d(adata, color='leiden', prefix=prefix)
+    """
+    annotations = adata.obs[color].unique()
+    import matplotlib.cm as cm
+    colors = cm.rainbow(np.linspace(0, 1, len(annotations)))
+    color_dict = dict((anno, color) for anno, color in zip(annotations, colors))
+
+    if custom_labels:
+        labels = custom_labels
+    else:
+        labels = list(annotations)
+
+    for i, tf in enumerate(labels):  # tfs = ['Adf1', 'Aef1', 'grh', 'kn', 'tll']
+        data = adata[adata.obs[color] == (i + 1)]
+        c = [color_dict[anno] for anno in data.obs[color]]
+        plt.scatter(data.obsm['spatial']['x'], data.obsm['spatial']['y'], s=1, c=c, label=tf)
+    plt.gca().set_aspect('equal')
+    plt.legend(loc='best')
+    plt.savefig(f'{prefix}_{color}_2d.png')
+    plt.close()
+
+
 if __name__ == '__main__':
     # total celltypes for Drosophilidae data
     cluster_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea',
-                'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut',
-                'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
+                    'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut',
+                    'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
