@@ -571,6 +571,7 @@ class InferRegulatoryNetwork:
 
     @staticmethod
     def hotspot_matrix(data: anndata.AnnData,
+                       c_threshold: float,
                        layer_key=None,
                        model='bernoulli',
                        latent_obsm_key="spatial",
@@ -630,10 +631,10 @@ class InferRegulatoryNetwork:
                                  **kwargs)
             hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
             hs_results = hs.compute_autocorrelations()
-            #print('autocorrelations:')
-            #print(hs_results)
-            #hs_results.to_csv('autocorrelations.csv')
-            hs_genes = hs_results.loc[hs_results.FDR < fdr_threshold].index  # Select genes
+            print('autocorrelations:')
+            print(hs_results)
+            hs_results.to_csv('autocorrelations.csv')
+            hs_genes = hs_results.loc[(hs_results.FDR < fdr_threshold) & (hs_results.C > c_threshold)].index  # Select genes
             local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
             local_correlations.to_csv('local_correlations.csv')
         logger.info('Network Inference DONE')
@@ -990,6 +991,7 @@ class InferRegulatoryNetwork:
              sigm=15,
              prefix: str = 'project',
 
+             c_threshold=0.8,
              layers='raw_counts',
              model='bernoulli',
              latent_obsm_key='spatial',
@@ -1064,6 +1066,7 @@ class InferRegulatoryNetwork:
                                               fn=f'{prefix}_adj.csv')
         elif method == 'hotspot':
             adjacencies = self.hotspot_matrix(self.data,
+                                              c_threshold=c_threshold,
                                               tf_list=tfs,
                                               jobs=num_workers,
                                               layer_key=layers,
@@ -1117,6 +1120,7 @@ class InferRegulatoryNetwork:
         print('saving regulons in pickle file')
         with open(f'{prefix}_regulons.pkl', "wb") as f:
             pickle.dump(regulons, f)
+        # regulons = pickle.load(open(fn,'rb'))
         print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
 
         # 5: Cellular enrichment (aka AUCell)
@@ -1124,8 +1128,7 @@ class InferRegulatoryNetwork:
                                              regulons,
                                              auc_threshold=self.params[method]["auc_threshold"],
                                              num_workers=num_workers,
-                                             save=save,
-                                             cache=cache,
+                                             save=save,                                             cache=cache,
                                              noweights=noweights,
                                              normalize=normalize,
                                              fn=f'{prefix}_auc.csv')

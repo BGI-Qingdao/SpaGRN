@@ -11,10 +11,32 @@
 
 import os
 import sys
+sys.path.append('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/')
 import argparse
+import pandas as pd
 from multiprocessing import cpu_count
-from regulatory_network import InferRegulatoryNetwork as irn
-import plot as prn
+#import spagrn_debug
+from spagrn_debug.regulatory_network import InferRegulatoryNetwork as irn
+import spagrn_debug.plot as prn
+#from copy import deepcopy
+import scanpy as sc
+
+
+def add_params(grn, method: str, dic: dict):
+    """
+    :param method:
+    :param dic:
+    Example:
+        grn = InferenceRegulatoryNetwork(data)
+        grn.add_params('hotspot', {'num_worker':12, 'auc_threshold': 0.001})
+    """
+    og_params = deepcopy(grn._params)
+    try:
+        for key, value in dic.items():
+            grn._params[method][key] = value
+    except KeyError:
+        logger.warning('KeyError, params did not change')  # TODO
+        grn._params = og_params
 
 
 if __name__ == '__main__':
@@ -40,9 +62,18 @@ if __name__ == '__main__':
     # load data
     data = irn.read_file(fn)
     data = irn.preprocess(data)
+    sc.tl.pca(data)
+    print(data)
 
     # create grn
     grn = irn(data)
+    #grn_plot = prn(data)
+    print(method)
+
+    # set parameters
+    grn.add_params('hotspot', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
+    grn.add_params('scoexp', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
+    grn.add_params('grnboost', {'prune_auc_threshold': 0.05, 'rank_threshold': 3000, 'auc_threshold': 0.05})
 
     # run analysis
     grn.main(database_fn,
@@ -51,6 +82,35 @@ if __name__ == '__main__':
              num_workers=cpu_count(),
              cache=False,
              save=True,
+             c_threshold=0.2,
+             layers=None,
+             latent_obsm_key='spatial',
+             model='danb', #bernoulli
+             n_neighbors=30,
+             weighted_graph=False,
+             cluster_label='celltype',
              method=method,
              prefix=prefix,
-             noweights=True)
+             noweights=False,
+             rho_mask_dropouts=False)
+
+    # PLOTing
+    auc_mtx = pd.read_csv(f'{out_dir}/{method}_auc.csv',index_col=0)
+    # remove all zero columns (which have no variation at all)
+    auc_mtx = auc_mtx.loc[:, (auc_mtx != 0).any(axis=0)]
+
+    prn.auc_heatmap(data,
+            auc_mtx,
+            cluster_label='celltype',
+            rss_fn=f'{out_dir}/{method}_regulon_specificity_scores.txt',
+            topn=10,
+            subset=False,
+            save=True,
+            fn=f'{out_dir}/{method}_clusters_heatmap_top20.png',
+            legend_fn=f"{out_dir}/{method}_rss_celltype_legend_top20.png")
+
+    regs = grn.regulons
+    for reg in list(regs.keys()):
+        print(f'plotting {reg}')
+        plot_2d(grn.data, 'spatial', grn.auc_mtx, reg_name=reg, fn=f'{reg.strip("(+)")}.png')
+
