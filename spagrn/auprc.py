@@ -84,42 +84,43 @@ if __name__ == '__main__':
     false_tf_names = ['disco-r', 'Med', 'Dfd', 'br', 'so']
 
     # 2. regulons
-    # regs = json.load(open('hotspot_danb/hotspot_regulons.json'))
     regs = json.load(open(sys.argv[1]))
 
     # 3 true labels
-    # fl = glob.glob('./GRN_params_*.csv')
-    # df_true = pd.concat([pd.read_csv(i) for i in fl]).astype(str)
-    # # create a ground true matrix that contains all the genes
-    # fl_c = glob.glob('./counts_*.csv')
-    # counts = pd.concat([pd.read_csv(i, index_col=0) for i in fl_c]).fillna(0).astype(int)
-    # all_genes = list(counts.index)
-    # ground_truth = pd.DataFrame(product(tfs, all_genes), columns=['regulator.gene', 'regulated.gene']).astype(str)
-    # ground_truth['regulator.effect'] = [0] * ground_truth.shape[0]
-    # ground_truth = pd.concat([ground_truth, df_true])
-    # ground_truth = ground_truth.drop_duplicates(['regulator.gene', 'regulated.gene'], keep='last')
-    # names = pd.read_csv('name_df.csv')
-    # ground_truth[['regulator.gene', 'regulated.gene']] = ground_truth[['regulator.gene', 'regulated.gene']].replace(
-    #     list(names['id']), list(names['name']))
-    # ground_truth.to_csv('ground_truth_all_and_noise.csv', index=False)
+    def make_ground_truth():
+        fl = glob.glob('./GRN_params_*.csv')
+        df_true = pd.concat([pd.read_csv(i) for i in fl]).astype(str)
+        # create a ground true matrix that contains all the genes
+        fl_c = glob.glob('./counts_*.csv')
+        counts = pd.concat([pd.read_csv(i, index_col=0) for i in fl_c]).fillna(0).astype(int)
+        all_genes = list(counts.index)
+        ground_truth = pd.DataFrame(product(tfs, all_genes), columns=['regulator.gene', 'regulated.gene']).astype(str)
+        ground_truth['regulator.effect'] = [0] * ground_truth.shape[0]
+        ground_truth = pd.concat([ground_truth, df_true])
+        ground_truth = ground_truth.drop_duplicates(['regulator.gene', 'regulated.gene'], keep='last')
+        names = pd.read_csv('name_df.csv')
+        ground_truth[['regulator.gene', 'regulated.gene']] = ground_truth[['regulator.gene', 'regulated.gene']].replace(
+            list(names['id']), list(names['name']))
+        ground_truth.to_csv('ground_truth_all_and_noise.csv', index=False)
 
     # t_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(real_tf_names)]
     # f_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(false_tf_names)]
     # f_ground_truth['regulator.effect'] = [0.0] * f_ground_truth.shape[0]
 
-    ground_truth = pd.read_csv('ground_truth_all_and_noise.csv')
-    agt = ground_truth[ground_truth['regulator.gene']=='Adf1']
-    rgt = ground_truth[ground_truth['regulator.gene']!='Adf1']
-    agt['regulator.effect'] = [0.0] * agt.shape[0]
-    ground_truth = pd.concat([rgt, agt])
+    ground_truth = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/ground_truth_all_and_noise.csv')
+    # agt = ground_truth[ground_truth['regulator.gene']=='Adf1']
+    # rgt = ground_truth[ground_truth['regulator.gene']!='Adf1']
+    # agt['regulator.effect'] = [0.0] * agt.shape[0]
+    # ground_truth = pd.concat([rgt, agt])
     # 4. prediction and TF-tg values
     # df_pred = pd.read_csv('hotspot_danb/predicted_outcome_ver7.csv')
     # adj = pd.read_csv('hotspot_danb/hotspot_adj.csv')
     # df_pred = pd.read_csv(sys.argv[2])
-    adj = pd.read_csv(sys.argv[2])
-    df_pred = dir2df(regs, col=['regulator.gene', 'regulated.gene'])
-    df_pred['regulator.gene'] = df_pred['regulator.gene'].str.strip('(+)')
 
+    #adj = pd.read_csv(sys.argv[2])
+    #df_pred = dir2df(regs, col=['regulator.gene', 'regulated.gene'])
+    #f_pred['regulator.gene'] = df_pred['regulator.gene'].str.strip('(+)')
+    df_pred = pd.read_csv(sys.argv[2])
     # ratio of positives
     baseline = 1 - ground_truth[ground_truth['regulator.effect'] == 0].shape[0] / ground_truth.shape[0]
 
@@ -136,15 +137,19 @@ if __name__ == '__main__':
     # pred = df_pred.merge(adj, left_on=['regulator.gene', 'regulated.gene'], right_on=['TF', 'target'], how='left').drop(['TF', 'target'], axis=1)
 
     # pred = df_pred.merge(adj, left_on=['regulator.gene', 'regulated.gene'], right_on=['TF', 'target'], how='left').drop(['TF', 'target'], axis=1)
-    pred_index = pd.merge(df_pred[['regulator.gene', 'regulated.gene']],
+
+
+    pred_index = pd.merge(df_pred[['regulator.gene', 'regulated.gene', 'regulator.effect', 'spearman','predicted','ground_truth']],
                           ground_truth[['regulator.gene', 'regulated.gene']], on=['regulator.gene', 'regulated.gene'],
                           how='outer')
-    pred_full = pred_index.merge(adj, left_on=['regulator.gene', 'regulated.gene'], right_on=['TF', 'target'],
-                                 how='left').drop(['TF', 'target'], axis=1)
-    pred_full.columns = ['regulator.gene', 'regulated.gene', 'regulator.effect']
-    pred = pred_full.fillna(int(pred_full['regulator.effect'].min()) - 2)
+    # pred_full = pred_index.merge(adj, left_on=['regulator.gene', 'regulated.gene'], right_on=['TF', 'target'],
+    #                              how='left').drop(['TF', 'target'], axis=1)
+    # pred_full.columns = ['regulator.gene', 'regulated.gene', 'regulator.effect']
+    # pred = pred_full.fillna(int(pred_full['regulator.effect'].min()) - 2)
+    pred = pred_index.sort_values(['regulator.gene', 'regulated.gene'], ascending=[True, True])
+    pred = pred.fillna(int(pred['regulator.effect'].min()) - 2)
+    pred = pred.fillna(int(pred['spearman'].min()) - 2)
 
-    pred = pred.sort_values(['regulator.gene', 'regulated.gene'], ascending=[True, True])
     ground_truth['regulator.effect'] = ground_truth['regulator.effect'].astype('float64')
     # convert y_true into a binary matrix
     ground_truth.loc[ground_truth['regulator.effect'] > 0, 'regulator.effect'] = 1
@@ -158,23 +163,71 @@ if __name__ == '__main__':
 
     # calculate xx
     prec, recall, thresholds = precision_recall_curve(y_true=ground_truth['regulator.effect'],
-                                                      probas_pred=pred['regulator.effect'],
+                                                      probas_pred=pred['spearman'],
                                                       pos_label=1)
-    print(prec, recall, thresholds)
     plot_prec_recall(prec, recall)
 
     new_auc = auc(recall, prec)
 
     auprc_ratio = new_auc / baseline
-    print(auprc_ratio)
+    print(f'AUPRC ratio is {auprc_ratio}.')
+    with open('AUPRC_ratio.txt', 'w') as f:
+        f.writelines(f'{auprc_ratio}')
 
-    fpr, tpr, thresholds = roc_curve(y_true=ground_truth['regulator.effect'],
-                                     y_score=pred['regulator.effect'],
+    fpr, tpr, thresholds2 = roc_curve(y_true=ground_truth['regulator.effect'],
+                                     y_score=pred['spearman'],
                                      pos_label=1)
-    print(fpr, tpr, thresholds)
     plt.fill_between(fpr, tpr)
     plt.ylabel("true positive")
     plt.xlabel("false positive")
-    plt.title("auroc")
+    plt.title("AUROC")
     plt.savefig('aucroc.png')
     plt.close()
+
+
+    # get spearman values
+    def get_spearman_values():
+        import pandas as pd
+        import json
+        from scipy import stats
+        import scanpy as sc
+
+        # 1. calculate spearman cc
+        adata = sc.read_h5ad('hetero.h5ad')
+        df = adata.to_df()
+        adj = pd.read_csv('hotspot_adj.csv')
+        s = []
+        for i in adj.index:
+            res = stats.spearmanr(df[adj.loc[i].TF], df[adj.loc[i].target])
+            s.append(res.correlation)
+        adj['spearman'] = s
+        adj = adj.sort_values(['importance', 'spearman'], ascending=False)
+
+        # input prediction value
+        regs = json.load(open('hotspot_regulons.json'))
+        mylist = [(key, x) for key, val in regs.items() for x in val]
+        df_pred = pd.DataFrame(mylist, columns=['Name', 'Values'])
+        df_pred['Name'] = df_pred['Name'].str.strip('(+)')
+        df_pred['prediction'] = [1] * df_pred.shape[0]
+
+        # merge spearman df and prediction df
+        t = adj.merge(df_pred, left_on=['TF', 'target'], right_on=['Name', 'Values'], how='outer')
+        t['prediction'].fillna(0)
+        t['prediction'] = t['prediction'].fillna(0)
+
+        # introduce ground truth classification label
+        tt = t.merge(ground_truth, left_on=['TF', 'target'], right_on=['regulator.gene', 'regulated.gene'], how='left')
+        tt = tt[['TF', 'target', 'importance', 'spearman', 'v', 'regulator.effect']]
+        tt.columns = ['TF', 'target', 'importance', 'spearman', 'predicted', 'ground_truth']
+        # sort spearman value
+        tt1 = tt[tt.predicted > 0]
+        tt0 = tt[tt.predicted == 0]
+        tt1 = tt1.drop([10376, 10377, 10378])
+        tt1 = tt1.sort_values(['spearman'], ascending=False)
+        tt0 = tt0.sort_values(['spearman'], ascending=False)
+        # make sure 0 labels (negatives) spearman value is smaller than 1 labels
+        tt0['spearman'] = tt0['spearman'] - 1
+        tttt = pd.concat([tt1, tt0])
+        tttt.columns = ['regulator.gene', 'regulated.gene', 'regulator.effect', 'spearman', 'predicted', 'ground_truth']
+        tttt.to_csv('df_pred.csv', index=False)
+        # use this df as auprc input
