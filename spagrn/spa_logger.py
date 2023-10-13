@@ -40,4 +40,4 @@ class GetLogger:
         self.logger.critical(message)
 
 
-logger = GetLogger('spaGRN.log', logging.ERROR, logging.DEBUG)
+# logger = GetLogger('spaGRN.log', logging.ERROR, logging.DEBUG)
