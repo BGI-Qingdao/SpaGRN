@@ -1,11 +1,11 @@
 # spatialGRN
 
-__all__ = ['regulatory_network', 'plot', 'spa_logger']
+__all__ = ['regulatory_network', 'plot'] #, 'spa_logger']
 
 # deprecated to keep older scripts who import this from breaking
-from spagrn.regulatory_network import InferRegulatoryNetwork
-# from spagrn.plot import PlotRegulatoryNetwork
-from spagrn.spa_logger import GetLogger
+from .regulatory_network import InferRegulatoryNetwork
+# from .plot import PlotRegulatoryNetwork
+# from spagrn.spa_logger import GetLogger
 
 COLORS = [
         '#d60000', '#e2afaf', '#018700', '#a17569', '#e6a500', '#004b00',
