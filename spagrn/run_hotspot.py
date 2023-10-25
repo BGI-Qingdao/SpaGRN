@@ -11,6 +11,8 @@ import scanpy as sc
 import pandas as pd
 import seaborn as sns
 import pickle
+import json
+from typing import Union
 
 
 def get_cluster_label(g, df):
@@ -110,6 +112,46 @@ def xxx():
     return clusters
 
 
+def get_module_cols(adata, module_scores):
+    module_cols = []
+    for c in module_scores.columns:
+        key = f"Module {c}"
+        adata.obs[key] = module_scores[c]
+        module_cols.append(key)
+    return module_cols
+
+
+def has_tf(tfs, l, module_id) -> Union[None, str]:
+    com_tf = set(tfs).intersection(set(l))
+    if len(com_tf) == 1:
+        return list(com_tf)[0]
+    elif len(com_tf) == 0:
+        return None
+    elif len(com_tf) > 1:
+        print(com_tf)
+        print(f'module {module_id}')
+
+
+def create_regulons(hs, tf_names) -> dict:
+    mm = list(set(hs.modules))
+    mm.remove(-1)
+    regs = {}
+    for i in mm:
+        tg = list(hs.modules[hs.modules == i].index)
+        supposed_tf = has_tf(tf_names, tg, i)
+        if supposed_tf:
+            regs[supposed_tf] = tg
+    return regs
+
+
+def lc2adj(local_correlations, common_tf_list):
+    local_correlations['TF'] = local_correlations.columns
+    local_correlations = local_correlations.melt(id_vars=['TF'])
+    local_correlations.columns = ['TF', 'target', 'importance']
+    local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
+    return local_correlations
+
+
 def main():
     adata = sc.read_h5ad(sys.argv[1])
     hs = hotspot.Hotspot(
@@ -125,42 +167,30 @@ def main():
     local_correlations = hs.compute_local_correlations(hs_genes, jobs=20)  # jobs for parallelization
     local_correlations.to_csv('local_correlations.csv')
 
-    modules = hs.create_modules(
-        min_gene_threshold=30, core_only=True, fdr_threshold=0.05
+    hs.create_modules(
+        min_gene_threshold=50, core_only=True, fdr_threshold=0.05
     )
-    # print(modules)
-
-    # 画图
-    fig, cm = hs.plot_local_correlations()
-    # Extract module labels in clustermap
-    modules_labels = cm.ax_heatmap.yaxis.get_majorticklabels()
-    genes_labels = cm.ax_heatmap.xaxis.get_majorticklabels()
-    # print(modules_labels)
-    # print(genes_labels)
-    # with open('modules_labels.txt', 'w') as f:
-    #     f.writelines('\n'.join(modules_labels))
-    # with open('genes_labels.txt', 'w') as f:
-    #     f.writelines('\n'.join(genes_labels))
-    # adata.obsm['modules'] = modules_labels
-    # adata.obsm['genes'] = genes_labels
-
-    # df = get_cluster_label(cm, adata.to_df())
-    # print(df)
-
-    # ?---------------------------------------
+    # calculate module scores
     module_scores = hs.calculate_module_scores()
-    # print(module_scores)
+    get_module_cols(adata, module_scores)
 
-    module_cols = []
-    for c in module_scores.columns:
-        key = f"Module {c}"
-        adata.obs[key] = module_scores[c]
-        module_cols.append(key)
-    # print(module_cols)
+    # create regulons
+    tf_names = ['Adf1', 'Aef1', 'grh', 'kn', 'tll']
+    regulons = create_regulons(hs, tf_names)
+    with open('HOTSPOT_regulons.json', 'w') as f:
+        json.dump(regulons, f, indent=4)
+
+    # save results into adata
+    adj = lc2adj(local_correlations, tf_names)
+    adata.uns['adj'] = adj
+    adata.uns['regulon_dict'] = regulons
     adata.write_h5ad('hotspot.h5ad')
 
     with open("hs.plk", 'wb') as f:
         pickle.dump(hs, f)
+
+    # 画图
+    hs.plot_local_correlations()
 
 
 if __name__ == '__main__':
