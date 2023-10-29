@@ -841,7 +841,7 @@ def plot_legend(color_dir, marker='o', linestyle='', numpoints=1, ncol=3, loc='c
     fig = plt.figure(figsize=figsize)
     markers = [plt.Line2D([0, 0], [0, 0], color=color, marker=marker, linestyle=linestyle, **kwargs)
                for color in color_dir.values()]
-    plt.legend(markers, color_dir.keys(), numpoints=numpoints, ncol=ncol, loc=loc)
+    plt.legend(markers, color_dir.keys(), numpoints=numpoints, ncol=ncol, loc=loc, frameon=False)
     plt.box(False)
     plt.xticks([])
     plt.yticks([])
@@ -1034,6 +1034,7 @@ def plot_2d(data: anndata.AnnData,
                      lw=0,
                      **kwargs)
     plt.axis("equal")
+    plt.title(reg_name)
     plt.box(False)
     plt.axis('off')
     plt.colorbar(sc, shrink=0.35)
@@ -1070,6 +1071,50 @@ def plot_celltype(adata, color='annotation', prefix='2d_plot', custom_labels=Non
     plt.gca().set_aspect('equal')
     plt.legend(loc='best')
     plt.savefig(f'{prefix}_{color}_2d.png')
+    plt.close()
+
+
+def plot_gene(data: anndata.AnnData,
+              pos_label,
+              gene_name: str,
+              fn: str,
+              show_bg=False,
+              **kwargs):
+    """
+    Plot a gene on a 3D map
+    :param pos_label:
+    :param data:
+    :param gene_name:
+    :param fn:
+    :param view_vertical: vertical angle to view to the 3D object
+    :param view_horizontal: horizontal angle to view the 3D object
+    :param show_bg: if show background
+    :param xscale:
+    :param yscale:
+    :param zscale:
+    :return:
+
+    Example:
+        plot_gene(data, 'spatial', 'Zfp354c', 'Zfp354c.png')
+    """
+    # prepare plotting data
+    cell_coor = data.obsm[pos_label]
+    exp_mtx = data.to_df()
+
+    sc = plt.scatter(cell_coor['x'],
+                     cell_coor['y'],
+                     c=exp_mtx[gene_name],
+                     marker='.',
+                     edgecolors='none',
+                     cmap='plasma',
+                     lw=0, **kwargs)
+
+    if not show_bg:
+        plt.box(False)
+        plt.axis('off')
+    plt.title(gene_name)
+    plt.colorbar(sc, shrink=0.35)
+    plt.savefig(fn)
     plt.close()
 
 
