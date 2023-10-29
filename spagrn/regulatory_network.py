@@ -11,25 +11,22 @@
 
 # python core modules
 import os
-import re
 import csv
-import sys
-import logging
-from functools import partial
-from typing import Callable, Sequence, Type, TypeVar
 
 # third party modules
 import json
 import glob
 import anndata
 import hotspot
-import scipy.sparse
+import pickle
+import frozendict
 import pandas as pd
 import numpy as np
 import scanpy as sc
 from copy import deepcopy
-import matplotlib.pyplot as plt
 from multiprocessing import cpu_count
+from typing import List, Sequence
+from ctxcore.genesig import Regulon
 from pyscenic.export import export2loom
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
@@ -38,136 +35,127 @@ from ctxcore.rnkdb import FeatherRankingDatabase as RankingDatabase
 from pyscenic.utils import modules_from_adjacencies
 from pyscenic.rss import regulon_specificity_scores
 from pyscenic.aucell import aucell
-from pyscenic.transform import df2regulons
 from pyscenic.prune import prune2df, df2regulons
 
 # modules in self project
-from .spa_logger import logger
+# from .spa_logger import logger
+from .scoexp import ScoexpMatrix
 
 
-def _name(fname: str) -> str:
-    """
-    Extract file name (without path and extension)
-    :param fname:
-    :return:
-    """
-    return os.path.splitext(os.path.basename(fname))[0]
-
-
-class ScoexpMatrix:
-    """
-    Algorithms to calulate Scoexp matrix 
-    based on CellTrek (10.1038/s41587-022-01233-1) 
-    see CellTrek from https://github.com/navinlabcode/CellTrek
-    """
-
-    @staticmethod
-    def rbfk(dis_mat, sigm, zero_diag=True):
-        """
-        Radial basis function kernel
-        
-        :param dis_mat: Distance matrix
-        :param sigm: Width of rbfk
-        :param zero_diag:
-        :return rbf matrix
-        """
-        rbfk_out = np.exp(-1 * np.square(dis_mat) / (2 * sigm ** 2))
-        if zero_diag:
-            rbfk_out[np.diag_indices_from(rbfk_out)] = 0
-        return rbfk_out
-
-    @staticmethod
-    def wcor(X, W, method='pearson', na_zero=True):
-        """
-        Weighted cross correlation
-        
-        :param X: Expression matrix, n X p
-        :param W: Weight matrix, n X n
-        :param method: Correlation method, pearson or spearman
-        :param na_zero: Na to zero
-        :return correlation matrix
-        """
-        from scipy.stats import rankdata
-        from sklearn.preprocessing import scale
-        if method == 'spearman':
-            X = np.apply_along_axis(rankdata, 0, X)  # rank each columns
-        X = scale(X, axis=0)  # scale for each columns
-        W_cov_temp = np.matmul(np.matmul(X.T, W), X)
-        W_diag_mat = np.sqrt(np.matmul(np.diag(W_cov_temp), np.diag(W_cov_temp).T))
-        cor_mat = W_cov_temp / W_diag_mat
-        if na_zero:
-            np.nan_to_num(cor_mat, False)
-        return cor_mat
-
-    @staticmethod
-    def scoexp(irn_data,
-               gene_list: list = [],
-               tf_list: list = [],
-               sigm=15,
-               zero_cutoff=5,
-               cor_method='spearman',
-               save: bool = True,
-               fn: str = 'adj.csv',
-               ):
-        """
-        Main logic for scoexp calculation
- 
-        :param irn_data: object of InferenceRegulatoryNetwork
-        :param sigm: sigma for RBF kernel, default 15.
-        :param gene_list: filter gene by exp cell > zero_cutoff% of all cells if len(gene_list)<2, otherwise use this gene set.
-        :param tf_list: tf gene list. Use gene_list if tf_list is empty.
-        :param zero_cutoff: filter gene by exp cell > zero_cutoff% if if len(gene_list)<2
-        :param cor_method: 'spearman' or 'pearson'
-        :return: dataframe of tf-gene-importances
-        """
-        from scipy.spatial import distance_matrix
-        cell_gene_matrix = irn_data.matrix
-        if not isinstance(cell_gene_matrix, np.ndarray):
-            cell_gene_matrix = cell_gene_matrix.toarray()
-        # check gene_list
-        if len(gene_list) < 2:
-            logger.info('gene filtering...')
-            feature_nz = np.apply_along_axis(lambda x: np.mean(x != 0) * 100, 0, cell_gene_matrix)
-            features = irn_data.gene_names[feature_nz > zero_cutoff]
-            logger.info(f'{len(features)} features after filtering...')
-        else:
-            features = np.intersect1d(np.array(gene_list), irn_data.gene_names)
-            if len(features) < 2:
-                logger.error('No enough genes in gene_list detected, exit...')
-                sys.exit(12)
-        # check tf_list
-        if len(tf_list) < 1:
-            tf_list = features
-        else:
-            tf_list = np.intersect1d(np.array(tf_list), features)
-
-        gene_select = np.isin(irn_data.gene_names, features, assume_unique=True)
-        celltrek_inp = cell_gene_matrix[:, gene_select]
-        dist_mat = distance_matrix(irn_data.position,
-                                   irn_data.position)
-        kern_mat = ScoexpMatrix.rbfk(dist_mat, sigm=sigm, zero_diag=False)
-        logger.info('Calculating spatial-weighted cross-correlation...')
-        wcor_mat = ScoexpMatrix.wcor(X=celltrek_inp, W=kern_mat, method=cor_method)
-        logger.info('Calculating spatial-weighted cross-correlation done.')
-        df = pd.DataFrame(data=wcor_mat, index=features, columns=features)
-        # extract tf-gene-importances
-        df = df[tf_list].copy().T
-        df['TF'] = tf_list
-        ret = df.melt(id_vars=['TF'])
-        ret.columns = ['TF', 'target', 'importance0']
-        maxV = ret['importance0'].max()
-        ret['importance'] = ret['importance0'] / maxV
-        ret['importance'] = ret['importance'] * 1000
-        plt.hist(ret['importance'])
-        plt.savefig('celltrek_importance.png')
-        ret.drop(columns=['importance0'], inplace=True)
-        ret['valid'] = ret.apply(lambda row: row['TF'] != row['target'], axis=1)
-        ret = ret[ret['valid']].copy()
-        ret.drop(columns=['valid'], inplace=True)
-        # ret.to_csv('adj.csv',header=True,index=False)
-        if save:
-            ret.to_csv(fn, index=False)
-        return ret
+# class ScoexpMatrix:
+#     """
+#     Algorithms to calulate Scoexp matrix
+#     based on CellTrek (10.1038/s41587-022-01233-1)
+#     see CellTrek from https://github.com/navinlabcode/CellTrek
+#     """
+#
+#     @staticmethod
+#     def rbfk(dis_mat, sigm, zero_diag=True):
+#         """
+#         Radial basis function kernel
+#
+#         :param dis_mat: Distance matrix
+#         :param sigm: Width of rbfk
+#         :param zero_diag:
+#         :return rbf matrix
+#         """
+#         rbfk_out = np.exp(-1 * np.square(dis_mat) / (2 * sigm ** 2))
+#         if zero_diag:
+#             rbfk_out[np.diag_indices_from(rbfk_out)] = 0
+#         return rbfk_out
+#
+#     @staticmethod
+#     def wcor(X, W, method='pearson', na_zero=True):
+#         """
+#         Weighted cross correlation
+#
+#         :param X: Expression matrix, n X p
+#         :param W: Weight matrix, n X n
+#         :param method: Correlation method, pearson or spearman
+#         :param na_zero: Na to zero
+#         :return correlation matrix
+#         """
+#         from scipy.stats import rankdata
+#         from sklearn.preprocessing import scale
+#         if method == 'spearman':
+#             X = np.apply_along_axis(rankdata, 0, X)  # rank each columns
+#         X = scale(X, axis=0)  # scale for each columns
+#         W_cov_temp = np.matmul(np.matmul(X.T, W), X)
+#         W_diag_mat = np.sqrt(np.matmul(np.diag(W_cov_temp), np.diag(W_cov_temp).T))
+#         cor_mat = W_cov_temp / W_diag_mat
+#         if na_zero:
+#             np.nan_to_num(cor_mat, False)
+#         return cor_mat
+#
+#     @staticmethod
+#     def scoexp(irn_data,
+#                gene_list: list = [],
+#                tf_list: list = [],
+#                sigm=15,
+#                zero_cutoff=5,
+#                cor_method='spearman',
+#                save_tmp: bool = True,
+#                fn: str = 'adj.csv',
+#                ):
+#         """
+#         Main logic for scoexp calculation
+#
+#         :param irn_data: object of InferenceRegulatoryNetwork
+#         :param sigm: sigma for RBF kernel, default 15.
+#         :param gene_list: filter gene by exp cell > zero_cutoff% of all cells if len(gene_list)<2, otherwise use this gene set.
+#         :param tf_list: tf gene list. Use gene_list if tf_list is empty.
+#         :param zero_cutoff: filter gene by exp cell > zero_cutoff% if if len(gene_list)<2
+#         :param cor_method: 'spearman' or 'pearson'
+#         :return: dataframe of tf-gene-importances
+#         """
+#         from scipy.spatial import distance_matrix
+#         cell_gene_matrix = irn_data.matrix
+#         if not isinstance(cell_gene_matrix, np.ndarray):
+#             cell_gene_matrix = cell_gene_matrix.toarray()
+#         # check gene_list
+#         if len(gene_list) < 2:
+#             # logger.info('gene filtering...')
+#             feature_nz = np.apply_along_axis(lambda x: np.mean(x != 0) * 100, 0, cell_gene_matrix)
+#             features = irn_data.gene_names[feature_nz > zero_cutoff]
+#             # logger.info(f'{len(features)} features after filtering...')
+#         else:
+#             features = np.intersect1d(np.array(gene_list), irn_data.gene_names)
+#             if len(features) < 2:
+#                 # logger.error('No enough genes in gene_list detected, exit...')
+#                 sys.exit(12)
+#         # check tf_list
+#         if len(tf_list) < 1:
+#             tf_list = features
+#         else:
+#             tf_list = np.intersect1d(np.array(tf_list), features)
+#
+#         gene_select = np.isin(irn_data.gene_names, features, assume_unique=True)
+#         celltrek_inp = cell_gene_matrix[:, gene_select]
+#         dist_mat = distance_matrix(irn_data.position,
+#                                    irn_data.position)
+#         kern_mat = ScoexpMatrix.rbfk(dist_mat, sigm=sigm, zero_diag=False)
+#         # logger.info('Calculating spatial-weighted cross-correlation...')
+#         wcor_mat = ScoexpMatrix.wcor(X=celltrek_inp, W=kern_mat, method=cor_method)
+#         # logger.info('Calculating spatial-weighted cross-correlation done.')
+#         df = pd.DataFrame(data=wcor_mat, index=features, columns=features)
+#         # extract tf-gene-importances
+#         df = df[tf_list].copy().T
+#         df['TF'] = tf_list
+#         ret = df.melt(id_vars=['TF'])
+#         ret.columns = ['TF', 'target', 'importance0']
+#         maxV = ret['importance0'].max()
+#         ret['importance'] = ret['importance0'] / maxV
+#         ret['importance'] = ret['importance'] * 1000
+#         # plt.hist(ret['importance'])
+#         # plt.savefig('celltrek_importance.png')
+#         ret.drop(columns=['importance0'], inplace=True)
+#         ret['valid'] = ret.apply(lambda row: row['TF'] != row['target'], axis=1)
+#         ret = ret[ret['valid']].copy()
+#         ret.drop(columns=['valid'], inplace=True)
+#         # ret.to_csv('adj.csv',header=True,index=False)
+#         if save_tmp:
+#             ret.to_csv(fn, index=False)
+#         return ret
 
 
 class InferRegulatoryNetwork:
@@ -192,12 +180,17 @@ class InferRegulatoryNetwork:
 
         self.load_data_info(pos_label)
 
-        # network calculated attributes
-        self._regulon_list = None  # list
+        # Network calculated attributes
+        self._regulons = None  # list of ctxcore.genesig.Regulon instances
+        self._modules = None  # list of ctxcore.genesig.Regulon instances
         self._auc_mtx = None  # pd.DataFrame
         self._adjacencies = None  # pd.DataFrame
         self._regulon_dict = None  # dictionary
         self._rss = None  # pd.DataFrame
+
+        # Receptors
+        self._filtered = None  # dictionary
+        self._receptors = None  # set
 
         # other settings
         self._params = {
@@ -225,6 +218,176 @@ class InferRegulatoryNetwork:
                 'auc_threshold': 0.5,
                 'noweights': True,
             }}
+
+    # GRN pipeline main logic
+    def main(self,
+             databases: str,
+             motif_anno_fn: str,
+             tfs_fn,
+             target_genes=None,
+             num_workers=None,
+             save_tmp=True,
+             cache=True,
+             method='grnboost',
+             sigm=15,
+             prefix: str = 'project',
+
+             c_threshold=0.8,
+             layers='raw_counts',
+             model='bernoulli',
+             latent_obsm_key='spatial',
+             umi_counts_obs_key=None,
+             n_neighbors=30,
+             weighted_graph=False,
+             cluster_label='annotation',  # TODO: shouldn't set default value
+
+             rho_mask_dropouts=False,
+             noweights=None,
+             normalize: bool = False):
+        """
+
+        :param c_threshold:
+        :param n_neighbors:
+        :param weighted_graph:
+        :param rho_mask_dropouts:
+        :param databases:
+        :param motif_anno_fn:
+        :param tfs_fn:
+        :param target_genes:
+        :param num_workers:
+        :param save_tmp:
+        :param cache:
+        :param method: method from [grnboost/hotspot/scoexp]
+        :param sigm: sigma for scoexp, default 15 (assumption for 15um)
+        :param prefix:
+        :param layers:
+        :param model:
+        :param latent_obsm_key:
+        :param umi_counts_obs_key:
+        :param cluster_label:
+        :param noweights:
+        :param normalize:
+        :return:
+        """
+        assert method in ['grnboost', 'hotspot', 'scoexp'], "method options are grnboost/hotspot/scoexp"
+        self.data.uns['method'] = method
+        global adjacencies
+        matrix = self._matrix
+        df = self._data.to_df()
+
+        if num_workers is None:
+            num_workers = cpu_count()
+
+        if target_genes is None:
+            target_genes = self._gene_names
+
+        if noweights is None:
+            noweights = self.params[method]["noweights"]
+
+        # 1. load TF list
+        if tfs_fn is None:
+            tfs = 'all'
+            # tfs = self._gene_names
+        else:
+            tfs = self.load_tfs(tfs_fn)
+
+        # 2. load the ranking databases
+        dbs = self.load_database(databases)
+
+        # 3. GRN inference
+        if method == 'grnboost':
+            adjacencies = self.grn_inference(matrix,
+                                             genes=target_genes,
+                                             tf_names=tfs,
+                                             num_workers=num_workers,
+                                             cache=cache,
+                                             save_tmp=save_tmp,
+                                             fn=f'{prefix}_adj.csv')
+        elif method == 'scoexp':
+            adjacencies = ScoexpMatrix.scoexp(self,
+                                              target_genes,
+                                              tfs,
+                                              sigm=sigm,
+                                              save_tmp=save_tmp,
+                                              fn=f'{prefix}_adj.csv')
+        elif method == 'hotspot':
+            adjacencies = self.hotspot_matrix(self.data,
+                                              c_threshold=c_threshold,
+                                              tf_list=tfs,
+                                              jobs=num_workers,
+                                              layer_key=layers,
+                                              model=model,
+                                              latent_obsm_key=latent_obsm_key,
+                                              umi_counts_obs_key=umi_counts_obs_key,
+                                              n_neighbors=n_neighbors,
+                                              weighted_graph=weighted_graph,
+                                              cache=cache,
+                                              fn=f'{prefix}_adj.csv')
+
+        modules = self.get_modules(adjacencies, df, rho_mask_dropouts=rho_mask_dropouts)  # ctxcore.genesig.Regulon
+        with open(f'{prefix}_modules.pkl', "wb") as f:
+            pickle.dump(modules, f)
+
+        d = {}
+        for tf in tfs:
+            d[tf] = {}
+            tf_mods = [x for x in modules if x.transcription_factor == tf]
+            for i, mod in enumerate(tf_mods):
+                # print(f'{tf} module {str(i)}: {len(mod.genes)} genes')
+                d[tf][f'module {str(i)}'] = list(mod.genes)
+        with open(f'{prefix}_before_cistarget.json', 'w') as f:
+            json.dump(d, f, sort_keys=True, indent=4)
+
+        # 4. Regulons prediction aka cisTarget
+        regulons = self.prune_modules(modules,
+                                      dbs,
+                                      motif_anno_fn,
+                                      num_workers=num_workers,
+                                      save_tmp=save_tmp,
+                                      cache=cache,
+                                      fn=f'{prefix}_motifs.csv',
+                                      rank_threshold=self.params[method]["rank_threshold"],
+                                      auc_threshold=self.params[method]["prune_auc_threshold"],
+                                      nes_threshold=self.params[method]["nes_threshold"],
+                                      motif_similarity_fdr=self.params[method][
+                                          "motif_similarity_fdr"])  # ctxcore.genesig.Regulon
+
+        self.regulon_dict = self.get_regulon_dict(regulons)
+        self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
+        with open(f'{prefix}_regulons.pkl', "wb") as f:
+            pickle.dump(regulons, f)
+
+        # 5.0 Receptor AUCs
+        self.get_filtered_genes()
+        self.get_receptors(save_tmp=save_tmp, fn=f'{prefix}_filtered_targets_receptor.json')
+
+        # 5: Cellular enrichment (aka AUCell)
+        self.auc_activity_level(df,
+                                regulons,
+                                auc_threshold=self.params[method]["auc_threshold"],
+                                num_workers=num_workers,
+                                save_tmp=save_tmp, cache=cache,
+                                noweights=noweights,
+                                normalize=normalize,
+                                fn=f'{prefix}_auc.csv')
+
+        # 6.
+        self.cal_regulon_score(cluster_label=cluster_label, save_tmp=save_tmp,
+                               fn=f'{prefix}_regulon_specificity_scores.txt')
+
+        # 7.
+        # TODO: check if data has adj, regulon_dict, auc_mtx etc. before saving to disk
+        # dtype=object
+        self.data.write_h5ad(f'{prefix}_spagrn.h5ad')
+
+    def load_results(self, modules_fn=None, regulons_fn=None):
+        self.adjacencies = self.data.uns['adj']
+        self.auc_mtx = self.data.obsm['auc_mtx']
+        self.rss = self.data.uns['rss']
+        if modules_fn:
+            self.modules = pickle.load(open(modules_fn, 'rb'))
+        if regulons_fn:
+            self.regulons = pickle.load(open(regulons_fn, 'rb'))
 
     @property
     def data(self):
@@ -274,12 +437,12 @@ class InferRegulatoryNetwork:
         self._adjacencies = value
 
     @property
-    def regulon_list(self):
-        return self._regulon_list
+    def regulons(self):
+        return self._regulons
 
-    @regulon_list.setter
-    def regulon_list(self, value):
-        self._regulon_list = value
+    @regulons.setter
+    def regulons(self, value):
+        self._regulons = value
 
     @property
     def regulon_dict(self):
@@ -314,6 +477,30 @@ class InferRegulatoryNetwork:
         self._rss = value
 
     @property
+    def modules(self):
+        return self._modules
+
+    @modules.setter
+    def modules(self, value):
+        self._modules = value
+
+    @property
+    def filtered(self):
+        return self._filtered
+
+    @filtered.setter
+    def filtered(self, value):
+        self._filtered = value
+
+    @property
+    def receptors(self):
+        return self._receptors
+
+    @receptors.setter
+    def receptors(self, value):
+        self._receptors = value
+
+    @property
     def params(self):
         return self._params
 
@@ -337,21 +524,14 @@ class InferRegulatoryNetwork:
             for key, value in dic.items():
                 self._params[method][key] = value
         except KeyError:
-            logger.warning('KeyError, params did not change')  # TODO
             self._params = og_params
 
-    def load_data_info(self, pos_label):
+    def load_data_info(self, pos_label='spatial'):
         """
         Load useful data to properties.
         :param pos_label: pos key in obsm, default 'spatial'. Only used if data is Anndata. 
         :return:
         """
-        # if isinstance(self._data, StereoExpData):
-        #     self._matrix = self._data.exp_matrix
-        #     self._gene_names = self._data.gene_names
-        #     self._cell_names = self._data.cell_names
-        #     self._position = self._data.position
-        # elif isinstance(self._data, anndata.AnnData):
         self._matrix = self._data.X
         self._gene_names = self._data.var_names
         self._cell_names = self._data.obs_names
@@ -371,7 +551,7 @@ class InferRegulatoryNetwork:
 
     # Data loading methods
     @staticmethod
-    def read_file(fn: str, bin_type='cell_bins'):
+    def read_file(fn: str):
         """
         Loading input files, supported file formats:
             * gef
@@ -382,7 +562,6 @@ class InferRegulatoryNetwork:
             * h5ad
             * gef
         :param fn:
-        :param bin_type:
         :return:
 
         Example:
@@ -390,11 +569,8 @@ class InferRegulatoryNetwork:
             or
             grn.read_file('test.h5ad')
         """
-        logger.info('Loading expression data...')
         extension = os.path.splitext(fn)[1]
-        logger.info(f'file extension is {extension}')
         if extension == '.csv':
-            logger.error('read_file method does not support csv files')
             raise TypeError('this method does not support csv files, '
                             'please read this file using functions outside of the InferenceRegulatoryNetwork class, '
                             'e.g. pandas.read_csv')
@@ -403,10 +579,6 @@ class InferRegulatoryNetwork:
             return data
         elif extension == '.h5ad':
             data = sc.read_h5ad(fn)
-            return data
-        elif extension == '.gef':
-            from stereo.io.reader import read_gef
-            data = read_gef(file_path=fn, bin_type=bin_type)
             return data
 
     @staticmethod
@@ -429,22 +601,6 @@ class InferRegulatoryNetwork:
             return data[data.obs[cluster_label].isin(target_clusters)]
         else:
             raise TypeError('data must be anndata.Anndata object')
-
-    # @staticmethod
-    # def load_stdata_by_cluster(data: StereoExpData,
-    #                            meta: pd.DataFrame,
-    #                            cluster_label: str,
-    #                            target_clusters: list) -> scipy.sparse.csc_matrix:
-    #     """
-    #
-    #     :param data:
-    #     :param meta:
-    #     :param cluster_label:
-    #     :param target_clusters:
-    #     :return:
-    #     """
-    #
-    #     return data.exp_matrix[meta[cluster_label].isin(target_clusters)]
 
     @staticmethod
     def read_motif_file(fname):
@@ -486,7 +642,7 @@ class InferRegulatoryNetwork:
         # add the total counts per cell as observations-annotation to adata
         adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
 
-        logger.info('Start filtering data...')
+        # logger.info('Start filtering data...')
         # ﬁltering with basic thresholds for genes and cells
         sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
         sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
@@ -515,7 +671,7 @@ class InferRegulatoryNetwork:
                       num_workers: int,
                       verbose: bool = True,
                       cache: bool = True,
-                      save: bool = True,
+                      save_tmp: bool = True,
                       fn: str = 'adj.csv',
                       **kwargs) -> pd.DataFrame:
         """
@@ -529,7 +685,7 @@ class InferRegulatoryNetwork:
         :param num_workers: number of thread
         :param verbose: if print out running details
         :param cache:
-        :param save: if save adjacencies result into a file
+        :param save_tmp: if save adjacencies result into a file
         :param fn: adjacencies file name
         :return:
 
@@ -537,12 +693,9 @@ class InferRegulatoryNetwork:
 
         """
         if cache and os.path.isfile(fn):
-            logger.info(f'cached file {fn} found')
             adjacencies = pd.read_csv(fn)
             self.adjacencies = adjacencies
             return adjacencies
-        else:
-            logger.info('cached file not found, running grnboost2 now')
 
         if num_workers is None:
             num_workers = cpu_count()
@@ -553,9 +706,10 @@ class InferRegulatoryNetwork:
                                 verbose=verbose,
                                 client_or_address=custom_client,
                                 **kwargs)
-        if save:
+        if save_tmp:
             adjacencies.to_csv(fn, index=False)
         self.adjacencies = adjacencies
+        self.data.uns['adj'] = adjacencies
         return adjacencies
 
     def uniq_genes(self, adjacencies):
@@ -566,11 +720,10 @@ class InferRegulatoryNetwork:
         """
         df = self._data.to_df()
         unique_adj_genes = set(adjacencies["TF"]).union(set(adjacencies["target"])) - set(df.columns)
-        logger.info(f'find {len(unique_adj_genes) / len(set(df.columns))} unique genes')
         return unique_adj_genes
 
-    @staticmethod
-    def hotspot_matrix(data: anndata.AnnData,
+    def hotspot_matrix(self,
+                       data: anndata.AnnData,
                        c_threshold: float,
                        layer_key=None,
                        model='bernoulli',
@@ -580,7 +733,7 @@ class InferRegulatoryNetwork:
                        n_neighbors=30,
                        fdr_threshold=0.05,
                        tf_list=None,
-                       save=True,
+                       save_tmp=True,
                        jobs=None,
                        cache=False,
                        fn: str = 'adj.csv',
@@ -611,18 +764,16 @@ class InferRegulatoryNetwork:
             when hotspot initialized with `latent`.
         :param fdr_threshold: Correlation threshold at which to stop assigning genes to modules
         :param tf_list: predefined TF names
-        :param save: if save results onto disk
+        :param save_tmp: if save results onto disk
         :param jobs: Number of parallel jobs to run
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
         """
-        if cache and os.path.isfile('local_correlations.csv'):
-            local_correlations = pd.read_csv('local_correlations.csv', index_col=0)
-        # elif os.path.isfile(fn):  # 2023-05-23: TODO: check what should be the index
-        #     local_correlations = pd.read_csv(fn)
-        #     return local_correlations
+        if cache and os.path.isfile(fn):
+            local_correlations = pd.read_csv(fn, index_col=0)
+            self.data.uns['adj'] = local_correlations
+            return local_correlations
         else:
-            print(model, layer_key, latent_obsm_key, umi_counts_obs_key)
             hs = hotspot.Hotspot(data,
                                  layer_key=layer_key,
                                  model=model,
@@ -631,19 +782,14 @@ class InferRegulatoryNetwork:
                                  **kwargs)
             hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
             hs_results = hs.compute_autocorrelations()
-            print('autocorrelations:')
-            print(hs_results)
-            hs_results.to_csv('autocorrelations.csv')
-            hs_genes = hs_results.loc[(hs_results.FDR < fdr_threshold) & (hs_results.C > c_threshold)].index  # Select genes
+            hs_genes = hs_results.loc[
+                (hs_results.FDR < fdr_threshold) & (hs_results.C > c_threshold)].index  # Select genes
             local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
-            local_correlations.to_csv('local_correlations.csv')
-        logger.info('Network Inference DONE')
-        logger.info(f'Hotspot: create {local_correlations.shape[0]} features')
 
         # subset by TFs
         if tf_list:
             common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
-            logger.info(f'detected {len(common_tf_list)} predefined TF in data')
+            # logger.info(f'detected {len(common_tf_list)} predefined TF in data')
             assert len(common_tf_list) > 0, 'predefined TFs not found in data'
         else:
             common_tf_list = local_correlations.columns
@@ -653,16 +799,12 @@ class InferRegulatoryNetwork:
         local_correlations = local_correlations.melt(id_vars=['TF'])
         local_correlations.columns = ['TF', 'target', 'importance']
         local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
-        # TODO: change variable name from local_correlations to adjs
 
         # remove if TF = target
         local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
-        # print(local_correlations['importance'].dtypes)
-        # local_correlations['importance'] = local_correlations['importance'].astype(float)
-        # local_correlations['importance'] = local_correlations['importance'] * 101
-        # local_correlations['importance'] = abs(local_correlations['importance'])
 
-        if save:
+        self.data.uns['adj'] = local_correlations
+        if save_tmp:
             local_correlations.to_csv(fn, index=False)
         return local_correlations
 
@@ -673,7 +815,7 @@ class InferRegulatoryNetwork:
         :param database_dir:
         :return:
         """
-        logger.info('Loading ranked databases...')
+        # logger.info('Loading ranked databases...')
         db_fnames = glob.glob(database_dir)
         dbs = [RankingDatabase(fname=fname, name=_name(fname)) for fname in db_fnames]
         return dbs
@@ -681,11 +823,11 @@ class InferRegulatoryNetwork:
     # ------------------------------------------------------#
     #            step2:  FILTER TFS AND TARGETS             #
     # ------------------------------------------------------#
-    @staticmethod
-    def get_modules(adjacencies: pd.DataFrame,
+    def get_modules(self,
+                    adjacencies: pd.DataFrame,
                     matrix,
                     rho_mask_dropouts: bool = False,
-                    **kwargs):
+                    **kwargs) -> Sequence[Regulon]:
         """
         Create of co-expression modules
 
@@ -700,7 +842,8 @@ class InferRegulatoryNetwork:
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
         )
-        logger.info(f'generated {len(modules)} modules')
+        self.modules = modules
+        # self.data.uns['modules'] = modules
         return modules
 
     def prune_modules(self,
@@ -709,9 +852,9 @@ class InferRegulatoryNetwork:
                       motif_anno_fn: str,
                       num_workers: int,
                       cache: bool = True,
-                      save: bool = True,
+                      save_tmp: bool = True,
                       fn: str = 'motifs.csv',
-                      **kwargs):
+                      **kwargs) -> Sequence[Regulon]:
         """
         First, calculate a list of enriched motifs and the corresponding target genes for all modules.
         Then, create regulon_list from this table of enriched motifs.
@@ -730,21 +873,16 @@ class InferRegulatoryNetwork:
             None of all available CPUs need to be used.
         :param module_chunksize: The size of the chunk to use when using the dask framework.
         :param cache:
-        :param save:
+        :param save_tmp:
         :param fn:
         :param kwargs:
         :return: A dataframe.
         """
         if cache and os.path.isfile(fn):
-            logger.info(f'cached file {fn} found')
             df = self.read_motif_file(fn)
             regulon_list = df2regulons(df)
-            # alternative:
-            # regulon_list = load_signatures(fn)
-            self.regulon_list = regulon_list
+            self.regulons = regulon_list
             return regulon_list
-        else:
-            logger.info('cached file not found, running prune modules now')
 
         if num_workers is None:
             num_workers = cpu_count()
@@ -753,17 +891,12 @@ class InferRegulatoryNetwork:
         with ProgressBar():
             df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)  # rank_threshold
 
-        # 2023-09-14
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-        print('prune_modules')
-        print(df)
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
         # this function actually did two things. 1. get df, 2. turn df into list of Regulons
         # #2.
         regulon_list = df2regulons(df)
-        self.regulon_list = regulon_list
-
-        if save:
+        self.regulons = regulon_list
+        # self.data.uns['regulons'] = self.regulon_list
+        if save_tmp:
             df.to_csv(fn)
         return regulon_list
 
@@ -792,7 +925,7 @@ class InferRegulatoryNetwork:
                            normalize: bool = False,
                            seed=None,
                            cache: bool = True,
-                           save: bool = True,
+                           save_tmp: bool = True,
                            fn='auc.csv',
                            **kwargs) -> pd.DataFrame:
         """
@@ -809,17 +942,14 @@ class InferRegulatoryNetwork:
         :param noweights: Should the weights of the genes part of a signature be used in calculation of enrichment?
         :param normalize: Normalize the AUC values to a maximum of 1.0 per regulon.
         :param cache:
-        :param save:
+        :param save_tmp:
         :param fn:
         :return: A dataframe with the AUCs (n_cells x n_modules).
         """
         if cache and os.path.isfile(fn):
-            logger.info(f'cached file {fn} found')
             auc_mtx = pd.read_csv(fn, index_col=0)  # important! cell must be index, not one of the column
             self.auc_mtx = auc_mtx
             return auc_mtx
-        else:
-            logger.info('cached file not found, calculating auc_activity_level now')
 
         if num_workers is None:
             num_workers = cpu_count()
@@ -835,35 +965,55 @@ class InferRegulatoryNetwork:
 
         def remove_all_zero(auc_mtx):
             # check if there were regulons contain all zero auc values
-            if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
-                logger.warning('auc matrix contains all zero columns')
+            # if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
+            #     logger.warning('auc matrix contains all zero columns')
             auc_mtx = auc_mtx.loc[:, ~auc_mtx.ne(0).any()]
             # remove all zero columns (which have no variation at all)
             auc_mtx = auc_mtx.loc[:, (auc_mtx != 0).any(axis=0)]
             return auc_mtx
 
         self.auc_mtx = auc_mtx
-
-        if save:
+        self.data.obsm['auc_mtx'] = self.auc_mtx
+        if save_tmp:
             auc_mtx.to_csv(fn)
         return auc_mtx
 
     # ------------------------------------------------------#
-    #                       HANDLE DATA                     #
+    #                     HANDLE DATA                       #
     # ------------------------------------------------------#
-    def cal_regulon_score(self, cluster_label='annotation', fn='regulon_specificity_scores.txt'):
+    def cal_regulon_score(self, cluster_label='annotation', save_tmp=False, fn='regulon_specificity_scores.txt'):
         """
         Regulon specificity scores (RSS) across predicted cell types
+        :param fn:
+        :param save_tmp:
         :param cluster_label:
         :return:
         """
         rss_cellType = regulon_specificity_scores(self.auc_mtx, self.data.obs[cluster_label])
-        rss_cellType.to_csv(fn)
+        if save_tmp:
+            rss_cellType.to_csv(fn)
         self.rss = rss_cellType
+        self.data.uns['rss'] = rss_cellType  # for each cell type
         return rss_cellType
 
-    @staticmethod
-    def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_cellType: pd.DataFrame, topn: int) -> list:
+    # @staticmethod
+    # def get_top_regulons(data: anndata.AnnData, cluster_label: str, rss_cellType: pd.DataFrame, topn: int) -> dict:
+    #     """
+    #     get top n regulons for each cell type based on regulon specificity scores (rss)
+    #     :param data:
+    #     :param cluster_label:
+    #     :param rss_cellType:
+    #     :param topn:
+    #     :return: a list
+    #     """
+    #     # Select the top 5 regulon_list from each cell type
+    #     cats = sorted(list(set(data.obs[cluster_label])))
+    #     topreg = {}
+    #     for i, c in enumerate(cats):
+    #         topreg[c] = list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
+    #     return topreg
+
+    def get_top_regulons(self, cluster_label: str, topn: int) -> dict:
         """
         get top n regulons for each cell type based on regulon specificity scores (rss)
         :param data:
@@ -873,11 +1023,64 @@ class InferRegulatoryNetwork:
         :return: a list
         """
         # Select the top 5 regulon_list from each cell type
-        cats = sorted(list(set(data.obs[cluster_label])))
+        cats = sorted(list(set(self.data.obs[cluster_label])))
         topreg = {}
         for i, c in enumerate(cats):
-            topreg[c] = list(rss_cellType.T[c].sort_values(ascending=False)[:topn].index)
+            topreg[c] = list(self.rss.T[c].sort_values(ascending=False)[:topn].index)
         return topreg
+
+    # ------------------------------------------------------ #
+    #                 Receptor Detection                     #
+    # ------------------------------------------------------ #
+    def get_filtered_genes(self):
+        module_tf = []
+        for i in self.modules:
+            module_tf.append(i.transcription_factor)
+
+        final_tf = [i.strip('(+)') for i in list(self.regulon_dict.keys())]
+        com = set(final_tf).intersection(set(module_tf))
+
+        before_tf = {}
+        for tf in com:
+            before_tf[tf] = []
+            for i in self.modules:
+                if tf == i.transcription_factor:
+                    before_tf[tf] += list(i.genes)  # .remove(tf)
+
+        filtered = {}
+        for tf in com:
+            final_targets = self.regulon_dict[f'{tf}(+)']
+            before_targets = set(before_tf[tf])
+            filtered_targets = before_targets - set(final_targets)
+            if tf in filtered_targets:
+                filtered_targets.remove(tf)
+            filtered[tf] = list(filtered_targets)
+        self.filtered = filtered
+        self.data.uns['filtered_genes'] = filtered
+        return filtered
+
+    def get_receptors(self, save_tmp=False, fn='filtered_targets_receptor.json'):
+        niche_human = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_human.csv')
+        niche_mouse = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_mouse.csv')
+
+        receptor_tf = {}
+        total_receptor = set()
+
+        self.get_filtered_genes()
+        for tf, targets in self.filtered.items():
+            rtf1 = intersection_ci(set(niche_human['to']), set(targets), key=str.lower)
+            rtf2 = intersection_ci(set(niche_mouse['to']), set(targets), key=str.lower)
+            rtf = set(rtf1) | set(rtf2)
+            if len(rtf) > 0:
+                receptor_tf[tf] = list(rtf)
+                total_receptor = total_receptor | rtf
+        self.receptors = total_receptor
+        self.data.uns['receptors'] = total_receptor
+        self.data.uns['receptor_dict'] = receptor_tf
+
+        if save_tmp:
+            with open(fn, 'w') as fp:
+                json.dump(receptor_tf, fp, sort_keys=True, indent=4)
 
     # ------------------------------------------------------#
     #                 Results saving methods                #
@@ -890,8 +1093,9 @@ class InferRegulatoryNetwork:
         :return:
         """
         regulon_dict = self.get_regulon_dict(regulon_list)
+        self.data.uns['regulon_dict'] = regulon_dict
         with open(fn, 'w') as f:
-            json.dump(regulon_dict, f, indent=4)
+            json.dump(regulon_dict, f, sort_keys=True, indent=4)
 
     def regulons_to_csv(self, regulon_list: list, fn: str = 'regulon_list.csv'):
         """
@@ -973,176 +1177,9 @@ class InferRegulatoryNetwork:
             regulon_dict = regulons
         sub_adj = adjacencies[adjacencies.TF == tf]
         targets = regulon_dict[f'{tf}(+)']
-        print(len(targets))
         # all the target genes of the TF
         sub_df = sub_adj[sub_adj.target.isin(targets)]
         sub_df.to_csv(fn, index=False, sep='\t')
-
-    # GRN pipeline main logic
-    def main(self,
-             databases: str,
-             motif_anno_fn: str,
-             tfs_fn,
-             target_genes=None,
-             num_workers=None,
-             save=True,
-             cache=True,
-             method='grnboost',
-             sigm=15,
-             prefix: str = 'project',
-
-             c_threshold=0.8,
-             layers='raw_counts',
-             model='bernoulli',
-             latent_obsm_key='spatial',
-             umi_counts_obs_key=None,
-             n_neighbors=30,
-             weighted_graph=False,
-             cluster_label='annotation',  # TODO: shouldn't set default value
-
-             rho_mask_dropouts=False,
-             noweights=None,
-             normalize: bool = False):
-        """
-
-        :param databases:
-        :param motif_anno_fn:
-        :param tfs_fn:
-        :param target_genes:
-        :param num_workers:
-        :param save:
-        :param cache:
-        :param method: method from [grnboost/hotspot/scoexp]
-        :param sigm: sigma for scoexp, default 15 (assumption for 15um)
-        :param prefix:
-        :param layers:
-        :param model:
-        :param latent_obsm_key:
-        :param umi_counts_obs_key:
-        :param cluster_label:
-        :param noweights:
-        :param normalize:
-        :return:
-        """
-        assert method in ['grnboost', 'hotspot', 'scoexp'], "method options are grnboost/hotspot/scoexp"
-        global adjacencies
-        matrix = self._matrix
-        df = self._data.to_df()
-
-        if num_workers is None:
-            num_workers = cpu_count()
-
-        if target_genes is None:
-            target_genes = self._gene_names
-
-        if noweights is None:
-            noweights = self.params[method]["noweights"]
-
-        # 1. load TF list
-        if tfs_fn is None:
-            tfs = 'all'
-            # tfs = self._gene_names
-        else:
-            tfs = self.load_tfs(tfs_fn)
-
-        # 2. load the ranking databases
-        dbs = self.load_database(databases)
-
-        # 3. GRN inference
-        if method == 'grnboost':
-            adjacencies = self.grn_inference(matrix,
-                                             genes=target_genes,
-                                             tf_names=tfs,
-                                             num_workers=num_workers,
-                                             cache=cache,
-                                             save=save,
-                                             fn=f'{prefix}_adj.csv')
-        elif method == 'scoexp':
-            adjacencies = ScoexpMatrix.scoexp(self,
-                                              target_genes,
-                                              tfs,
-                                              sigm=sigm,
-                                              save=save,
-                                              fn=f'{prefix}_adj.csv')
-        elif method == 'hotspot':
-            adjacencies = self.hotspot_matrix(self.data,
-                                              c_threshold=c_threshold,
-                                              tf_list=tfs,
-                                              jobs=num_workers,
-                                              layer_key=layers,
-                                              model=model,
-                                              latent_obsm_key=latent_obsm_key,
-                                              umi_counts_obs_key=umi_counts_obs_key,
-                                              n_neighbors=n_neighbors,
-                                              weighted_graph=weighted_graph,
-                                              cache=cache,
-                                              fn=f'{prefix}_adj.csv')
-
-        modules = self.get_modules(adjacencies, df, rho_mask_dropouts=rho_mask_dropouts)
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-        print('1. modules:', type(modules[0]))
-        print('saving modules in pickle file')
-        import pickle
-        with open(f'{prefix}_modules.pkl', "wb") as f:
-            pickle.dump(modules, f)
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-
-        d = {}
-        for tf in tfs:
-            d[tf] = {}
-            tf_mods = [x for x in modules if x.transcription_factor == tf]
-            for i, mod in enumerate(tf_mods):
-                print(f'{tf} module {str(i)}: {len(mod.genes)} genes')
-                d[tf][f'module {str(i)}'] = list(mod.genes)
-        with open(f'{prefix}_before_cistarget.json', 'w') as f:
-            json.dump(d, f, indent=4)
-
-
-        # 4. Regulons prediction aka cisTarget
-        regulons = self.prune_modules(modules,
-                                      dbs,
-                                      motif_anno_fn,
-                                      num_workers=num_workers,
-                                      save=save,
-                                      cache=cache,
-                                      fn=f'{prefix}_motifs.csv',
-                                      rank_threshold=self.params[method]["rank_threshold"],
-                                      auc_threshold=self.params[method]["prune_auc_threshold"],
-                                      nes_threshold=self.params[method]["nes_threshold"],
-                                      motif_similarity_fdr=self.params[method]["motif_similarity_fdr"])
-
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-        print('regulons after prune_modules')
-        print(regulons)
-        print('2. regulons', type(regulons[0]))
-        self.regulon_dict = self.get_regulon_dict(regulons)
-        self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
-        print('saving regulons in pickle file')
-        with open(f'{prefix}_regulons.pkl', "wb") as f:
-            pickle.dump(regulons, f)
-        # regulons = pickle.load(open(fn,'rb'))
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-
-        # 5: Cellular enrichment (aka AUCell)
-        auc_matrix = self.auc_activity_level(df,
-                                             regulons,
-                                             auc_threshold=self.params[method]["auc_threshold"],
-                                             num_workers=num_workers,
-                                             save=save,                                             cache=cache,
-                                             noweights=noweights,
-                                             normalize=normalize,
-                                             fn=f'{prefix}_auc.csv')
-        logger.info('auc calculation DONE')
-
-        self.cal_regulon_score(cluster_label=cluster_label, fn=f'{prefix}_regulon_specificity_scores.txt')
-
-        # save results
-        # if save:
-        # logger.info('saving results...')
-        # self.regulons_to_json(regulons, fn=f'{prefix}_regulons.json')
-        # self.to_loom(df, auc_matrix, regulons, fn=f'{prefix}_output.loom')
-        # self.to_cytoscape(regulons, adjacencies, 'Zfp354c')
-        # logger.info('results saving DONE')
 
 
 def dict_to_df(json_fn):
@@ -1151,9 +1188,41 @@ def dict_to_df(json_fn):
     :param json_fn:
     :return:
     """
-    import pandas as pd
-    import json
     dic = json.load(open(json_fn))
     df = pd.DataFrame([(key, var) for (key, L) in dic.items() for var in L], columns=['TF', 'targets'])
     df.to_csv(f'{json_fn.strip(".json")}.csv', index=False)
 
+
+def frozen2regular(f_dir: frozendict.frozendict):
+    regular_dict = {}  # {} and dir(), what's the big difference?
+    for k, v in f_dir.items():
+        regular_dict[k] = v
+    return regular_dict
+
+
+def intersection_ci(iterableA, iterableB, key=lambda x: x):
+    """Return the intersection of two iterables with respect to `key` function.
+    ci: case insensitive
+    """
+
+    def unify(iterable):
+        d = {}
+        for item in iterable:
+            d.setdefault(key(item), []).append(item)
+        return d
+
+    A, B = unify(iterableA), unify(iterableB)
+    matched = []
+    for k in A:
+        if k in B:
+            matched.append(B[k][0])
+    return matched
+
+
+def _name(fname: str) -> str:
+    """
+    Extract file name (without path and extension)
+    :param fname:
+    :return:
+    """
+    return os.path.splitext(os.path.basename(fname))[0]
