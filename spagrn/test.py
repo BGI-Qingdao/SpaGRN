@@ -13,6 +13,7 @@ import os
 import sys
 sys.path.append('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/')
 import argparse
+import copy
 import pandas as pd
 from multiprocessing import cpu_count
 #import spagrn_debug
@@ -30,12 +31,12 @@ def add_params(grn, method: str, dic: dict):
         grn = InferenceRegulatoryNetwork(data)
         grn.add_params('hotspot', {'num_worker':12, 'auc_threshold': 0.001})
     """
-    og_params = deepcopy(grn._params)
+    og_params = copy.deepcopy(grn._params)
     try:
         for key, value in dic.items():
             grn._params[method][key] = value
     except KeyError:
-        logger.warning('KeyError, params did not change')  # TODO
+        # logger.warning('KeyError, params did not change')  # TODO
         grn._params = og_params
 
 
@@ -63,12 +64,9 @@ if __name__ == '__main__':
     data = irn.read_file(fn)
     data = irn.preprocess(data)
     sc.tl.pca(data)
-    print(data)
 
     # create grn
     grn = irn(data)
-    #grn_plot = prn(data)
-    print(method)
 
     # set parameters
     grn.add_params('hotspot', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
@@ -81,11 +79,11 @@ if __name__ == '__main__':
              tfs_fn,
              num_workers=cpu_count(),
              cache=False,
-             save=True,
+             save_tmp=True,
              c_threshold=0.2,
              layers=None,
              latent_obsm_key='spatial',
-             model='danb', #bernoulli
+             model='danb',  #bernoulli
              n_neighbors=30,
              weighted_graph=False,
              cluster_label='celltype',
@@ -112,5 +110,5 @@ if __name__ == '__main__':
     regs = grn.regulons
     for reg in list(regs.keys()):
         print(f'plotting {reg}')
-        plot_2d(grn.data, 'spatial', grn.auc_mtx, reg_name=reg, fn=f'{reg.strip("(+)")}.png')
+        prn.plot_2d(grn.data, 'spatial', grn.auc_mtx, reg_name=reg, fn=f'{reg.strip("(+)")}.png')
 
