@@ -298,7 +298,7 @@ def convert_gene_ids_to_names(params_dir, tfs, tf_names, motif_names):
     return tg_dir, tf_motif_dir, tf_id_dir, total_name, total_id, noise_name
 
 
-def assign_gene_names(tfs: list, rdb: pd.DataFrame, tf_motif_dir, grn_gt: pd.DataFrame, lr_gt: pd.DataFrame,
+def assign_gene_names_og(tfs: list, rdb: pd.DataFrame, tf_motif_dir, grn_gt: pd.DataFrame, lr_gt: pd.DataFrame,
                       total_name: list, total_id: list, noise_ids: list):
     """
     tested, worked
@@ -332,6 +332,9 @@ def assign_gene_names(tfs: list, rdb: pd.DataFrame, tf_motif_dir, grn_gt: pd.Dat
     # remove duplicates
     name_df1 = pd.DataFrame({'id': total_id, 'name': list(total_name)}).drop_duplicates(subset='id',
                                                                                         keep='first').astype(str)
+    # 2023-11-01: remove receptor genes. receptor gene names will be assigned later on
+    name_df1 = name_df1[~name_df1['id'].isin(list(set(lr_gt.receptor)))]
+
     total_name = list(name_df1.name)
     total_id = list(name_df1.id)
     # at this point, len(set(total_name)) should equal to len(set(total_id))
@@ -348,18 +351,27 @@ def assign_gene_names(tfs: list, rdb: pd.DataFrame, tf_motif_dir, grn_gt: pd.Dat
     # add noise names into total_name
     total_name += noise_genes_names
     total_id += noise_ids
+
+    # 2023-11-01: ligands and receptors names should from LR files
+    niche_mouse = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_mouse.csv')
+    ligand_names = set(niche_mouse['from'])
     # 3. for ligands
-    rest_rdb_names = list(set(rest_rdb_names) - set(total_name))
+    rest_names = list(ligand_names - set(total_name))
     ligand_ids = list(set(lr_gt.ligand))
-    ligand_genes_names = sample(rest_rdb_names, k=len(ligand_ids))
+    ligand_genes_names = sample(rest_names, k=len(ligand_ids))
     total_name += ligand_genes_names
     total_id += ligand_ids
     # 4. for receptor genes that are not TF targets
-    rest_rdb_names = list(set(rest_rdb_names) - set(total_name))
-    receptors_not_targets_ids = set(lr_gt.receptor) - set(grn_gt['regulated.gene'])
-    receptors_not_targets_names = sample(rest_rdb_names, k=len(receptors_not_targets_ids))
-    total_name += receptors_not_targets_names
-    total_id += receptors_not_targets_ids
+    receptor_names = set(niche_mouse['to'])
+    rest_names = list(receptor_names - set(total_name))
+    receptor_ids = list(set(lr_gt.receptor))
+    receptor_names = sample(rest_names, k=len(receptor_ids))
+    total_name += receptor_names
+    total_id += receptor_ids
+    # receptors_not_targets_ids = set(lr_gt.receptor) - set(grn_gt['regulated.gene'])
+    # receptors_not_targets_names = sample(rest_names, k=len(receptors_not_targets_ids))
+    # total_name += receptors_not_targets_names
+    # total_id += receptors_not_targets_ids
 
     # create names df
     name_df = pd.DataFrame({'id': total_id,
@@ -412,10 +424,20 @@ if __name__ == '__main__':
     tf_names = ['Adf1', 'Aef1', 'grh', 'kn', 'tll']
     motif_names = ['bergman__Adf1', 'bergman__Aef1', 'bergman__grh', 'metacluster_172.20', 'metacluster_140.5']
 
-    params_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7'
-    tg_dir, tf_motif_dir, tf_id_dir, total_name, total_id, noise_name = convert_gene_ids_to_names(params_dir, tfs,
-                                                                                                  tf_names, motif_names)
-    name_df = assign_gene_names(tfs, rdb, tf_motif_dir, grn_gt, lr_gt, total_name, total_id, noise_ids)
+    # params_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7'
+    # tg_dir, tf_motif_dir, tf_id_dir, total_name, total_id, noise_name = convert_gene_ids_to_names(params_dir, tfs,
+    #                                                                                               tf_names, motif_names)
+
+    tf_motif_dir = dict(zip(tf_names, motif_names))
+    tf_id_dir = dict(zip(tfs, tf_names))
+
+    # Prepare lists for gene names and noise names
+    total_name = tf_names.copy()
+    total_id = tfs.copy()
+    noise_name = []
+
+    name_df = assign_gene_names_og(tfs, rdb, tf_motif_dir, grn_gt, lr_gt, total_name, total_id, noise_ids)
+    name_df.to_csv('name_df.csv', index=False)
 
     adata = to_anndata(counts, celltypes, coor, name_df)
     adata.write_h5ad('lr.h5ad')
