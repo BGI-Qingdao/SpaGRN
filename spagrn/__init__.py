@@ -3,8 +3,7 @@
 __all__ = ['regulatory_network', 'plot'] #, 'spa_logger']
 
 # deprecated to keep older scripts who import this from breaking
-from .regulatory_network import InferRegulatoryNetwork
-# from .plot import PlotRegulatoryNetwork
+from .regulatory_network import InferNetwork
 # from spagrn.spa_logger import GetLogger
 
 COLORS = [
