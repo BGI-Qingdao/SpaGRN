@@ -373,6 +373,8 @@ def assign_gene_names_og(tfs: list, rdb: pd.DataFrame, tf_motif_dir, grn_gt: pd.
     # total_name += receptors_not_targets_names
     # total_id += receptors_not_targets_ids
 
+    # 2023-11-02: ligands and receptors names should from LR files AND should be lower ranked genes of motifs
+
     # create names df
     name_df = pd.DataFrame({'id': total_id,
                             'name': list(total_name)}).drop_duplicates(subset='id', keep='first').astype(str)
