@@ -12,6 +12,10 @@ import pyarrow
 from random import sample
 from typing import Union
 
+import sys
+sys.path.append('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/')
+from spagrn_debug.plot import plot_celltype, plot_gene
+
 
 class Simulator(object):
     """
@@ -373,6 +377,8 @@ def assign_gene_names_og(tfs: list, rdb: pd.DataFrame, tf_motif_dir, grn_gt: pd.
     # total_name += receptors_not_targets_names
     # total_id += receptors_not_targets_ids
 
+    # 2023-11-02: ligands and receptors names should from LR files AND should be lower ranked genes of motifs
+
     # create names df
     name_df = pd.DataFrame({'id': total_id,
                             'name': list(total_name)}).drop_duplicates(subset='id', keep='first').astype(str)
@@ -441,3 +447,17 @@ if __name__ == '__main__':
 
     adata = to_anndata(counts, celltypes, coor, name_df)
     adata.write_h5ad('lr.h5ad')
+
+    # plot data
+    names_dir = dict(zip(name_df.id, name_df.name))
+    tf_ids = list(set(grn_gt['regulator.gene']))
+    tfs = list(name_df[name_df.id.isin(tf_ids)].name)
+
+    plot_celltype(adata, color='celltype', prefix='lr_celltypes', custom_labels=tfs)
+
+    receptors = set(lr_gt.receptor)
+    for r in receptors:
+        rn = names_dir[r]
+        plot_gene(adata, 'spatial', rn, f'{rn}.png')
+
+
