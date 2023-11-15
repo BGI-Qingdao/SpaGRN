@@ -1,8 +1,10 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# !/usr/bin/env python -*- coding: utf-8 -*-
 # @Date: Created on 31 Oct 2023 15:00
 # @Author: Yao LI
-# @File: spagrn/other.py
+# @File: spagrn/network.py
+# @Description: A Gene Regulatory Network object. A typical network essentially contains regulators
+# (e.g. TFs), target genes. and cell types, regulons score between cell types and activity level among cells. and
+# regulator-target regulatory effect.
 
 import os
 
@@ -15,12 +17,11 @@ import anndata as an
 from typing import Sequence
 
 from ctxcore.genesig import Regulon
+from pyscenic.rss import regulon_specificity_scores
 
 
 def remove_all_zero(auc_mtx):
     # check if there were regulons contain all zero auc values
-    # if not auc_mtx.loc[:, auc_mtx.ne(0).any()].empty:
-    #     logger.warning('auc matrix contains all zero columns')
     auc_mtx = auc_mtx.loc[:, ~auc_mtx.ne(0).any()]
     # remove all zero columns (which have no variation at all)
     auc_mtx = auc_mtx.loc[:, (auc_mtx != 0).any(axis=0)]
@@ -255,7 +256,8 @@ class Network:
                 and (mtx.index.nlevels == 1)
                 and (mtx.columns.nlevels == 1))
 
-    def preprocess(self, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000):
+    @staticmethod
+    def preprocess(adata: an.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000):
         """
         Perform cleaning and quality control on the imported data before constructing gene regulatory network
         :param min_genes:
@@ -264,16 +266,18 @@ class Network:
         :param max_gene_num:
         :return: a anndata.AnnData
         """
-        self.data.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
+        adata.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
+        # # find mito genes
+        sc.pp.ﬁlter_cells(adata, min_genes=0)
         # add the total counts per cell as observations-annotation to adata
-        self.data.obs['n_counts'] = np.ravel(self.data.X.sum(axis=1))
+        adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
 
         # ﬁltering with basic thresholds for genes and cells
-        sc.pp.ﬁlter_cells(self.data, min_genes=min_genes)
-        sc.pp.ﬁlter_genes(self.data, min_cells=min_cells)
-        sc.pp.ﬁlter_genes(self.data, min_counts=min_counts)
-        self.data = self.data[self.data.obs['n_genes'] < max_gene_num, :]
-        return self.data
+        sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
+        sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
+        sc.pp.ﬁlter_genes(adata, min_counts=min_counts)
+        adata = adata[adata.obs['n_genes'] < max_gene_num, :]
+        return adata
 
     def uniq_genes(self, adjacencies):
         """
@@ -299,9 +303,7 @@ class Network:
             regulon_dict[reg.name] = targets
         return regulon_dict
 
-    # ------------------------------------------------------#
-    #                 Results saving methods                #
-    # ------------------------------------------------------#
+    # Save to files
     def regulons_to_json(self, fn='regulons.json'):
         """
         Write regulon dictionary into json file
@@ -313,3 +315,33 @@ class Network:
             self.data.uns['regulon_dict'] = self.regulon_dict
         with open(fn, 'w') as f:
             json.dump(self.regulon_dict, f, sort_keys=True, indent=4)
+
+    # Regulons and Cell Types
+    def cal_regulon_score(self, cluster_label='annotation', save_tmp=False, fn='regulon_specificity_scores.txt'):
+        """
+        Regulon specificity scores (RSS) across predicted cell types
+        :param fn:
+        :param save_tmp:
+        :param cluster_label:
+        :return:
+        """
+        rss_cellType = regulon_specificity_scores(self.auc_mtx, self.data.obs[cluster_label])
+        if save_tmp:
+            rss_cellType.to_csv(fn)
+        self.rss = rss_cellType
+        self.data.uns['rss'] = rss_cellType  # for each cell type
+        return rss_cellType
+
+    def get_top_regulons(self, cluster_label: str, topn: int) -> dict:
+        """
+        get top n regulons for each cell type based on regulon specificity scores (rss)
+        :param cluster_label:
+        :param topn:
+        :return: a list
+        """
+        # Select the top 5 regulon_list from each cell type
+        cats = sorted(list(set(self.data.obs[cluster_label])))
+        topreg = {}
+        for i, c in enumerate(cats):
+            topreg[c] = list(self.rss.T[c].sort_values(ascending=False)[:topn].index)
+        return topreg
