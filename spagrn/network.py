@@ -52,6 +52,7 @@ class Network:
         # Receptors
         self._filtered = None  # dictionary
         self._receptors = None  # set
+        self.receptor_dict = None
 
     @property
     def data(self):
