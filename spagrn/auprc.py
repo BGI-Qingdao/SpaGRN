@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Date: Created on 12 Oct 2023 10:34
 # @Author: Yao LI
-# @File: spagrn/auprc.py
+# @File: spagrn/prc.py
 
 
 import os
@@ -18,13 +18,18 @@ import seaborn as sns
 from itertools import product
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
+import matplotlib as mpl
+
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+mpl.rcParams['svg.fonttype'] = 'none'
 '''
 python ../../../../spagrn_debug/au.py
 '''
 
 
 class AUPRC:
-    def __init__(self, data, tfs, name_df=None):
+    def __init__(self, tfs=None, data=None, adj=None, name_df=None):
         self._adata = data  # only necessary when using spearman cc
         self._tfs = tfs
 
@@ -35,7 +40,7 @@ class AUPRC:
         self._auprc = None
         self._auroc = None
 
-        self._adj = None
+        self._adj = adj
         self._regulons = None
 
         # column names in Ground Truth file
@@ -177,47 +182,47 @@ class AUPRC:
         self.true_df = pd.concat([pd.read_csv(i) for i in fl]).astype(str)
         return self.true_df
 
-    def make_ground_truth(self, ground_truth_files, real_tfs=None, false_tfs=None):
-        """
-
-        :param ground_truth_files:
-        :param real_tfs:
-        :param false_tfs:
-        :return:
-        """
-        # names = pd.read_csv(naming_fn)
-        fl = glob.glob(ground_truth_files)
-        df_true = pd.concat([pd.read_csv(i) for i in fl]).astype(str)
-
-        # adata = sc.read_h5ad(adata_fn)
-        # if self.adata is None:
-        #     self.adata = adata
-        all_genes = self.adata.var_names
-        ground_truth = pd.DataFrame(product(self.tfs, all_genes), columns=['regulator.gene', 'regulated.gene']).astype(
-            str)
-        # ! make sure gene names are using the same nomenclature
-        ground_truth['regulated.gene'] = ground_truth['regulated.gene'].replace(list(self.name_df['name']),
-                                                                                list(self.name_df['id']))
-        ground_truth['regulator.effect'] = [0] * ground_truth.shape[0]
-        ground_truth = pd.concat([ground_truth, df_true])
-        ground_truth = ground_truth.drop_duplicates(['regulator.gene', 'regulated.gene'], keep='last')
-
-        # if false TF exists
-        if real_tfs and false_tfs:
-            t_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(real_tfs)]
-            f_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(false_tfs)]
-            f_ground_truth['regulator.effect'] = [0.0] * f_ground_truth.shape[0]
-            ground_truth = pd.concat([t_ground_truth, f_ground_truth])
-
-        ground_truth[['regulator.gene', 'regulated.gene']] = ground_truth[['regulator.gene', 'regulated.gene']].replace(
-            list(self.name_df['id']), list(self.name_df['name']))
-        ground_truth['regulator.effect'] = ground_truth['regulator.effect'].astype('float64')
-        # convert y_true into a binary matrix
-        ground_truth.loc[ground_truth['regulator.effect'] > 0, 'regulator.effect'] = 1
-        # order of genes need to be consistent between ground_truth and prediction
-        ground_truth = ground_truth.sort_values(['regulator.gene', 'regulated.gene'], ascending=[True, True])
-        self.ground_truth = ground_truth
-        return ground_truth
+    # def make_ground_truth(self, ground_truth_files, real_tfs=None, false_tfs=None):
+    #     """
+    #
+    #     :param ground_truth_files:
+    #     :param real_tfs:
+    #     :param false_tfs:
+    #     :return:
+    #     """
+    #     # names = pd.read_csv(naming_fn)
+    #     fl = glob.glob(ground_truth_files)
+    #     df_true = pd.concat([pd.read_csv(i) for i in fl]).astype(str)
+    #
+    #     # adata = sc.read_h5ad(adata_fn)
+    #     # if self.adata is None:
+    #     #     self.adata = adata
+    #     all_genes = self.adata.var_names
+    #     ground_truth = pd.DataFrame(product(self.tfs, all_genes), columns=['regulator.gene', 'regulated.gene']).astype(
+    #         str)
+    #     # ! make sure gene names are using the same nomenclature
+    #     ground_truth['regulated.gene'] = ground_truth['regulated.gene'].replace(list(self.name_df['name']),
+    #                                                                             list(self.name_df['id']))
+    #     ground_truth['regulator.effect'] = [0] * ground_truth.shape[0]
+    #     ground_truth = pd.concat([ground_truth, df_true])
+    #     ground_truth = ground_truth.drop_duplicates(['regulator.gene', 'regulated.gene'], keep='last')
+    #
+    #     # if false TF exists
+    #     if real_tfs and false_tfs:
+    #         t_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(real_tfs)]
+    #         f_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(false_tfs)]
+    #         f_ground_truth['regulator.effect'] = [0.0] * f_ground_truth.shape[0]
+    #         ground_truth = pd.concat([t_ground_truth, f_ground_truth])
+    #
+    #     ground_truth[['regulator.gene', 'regulated.gene']] = ground_truth[['regulator.gene', 'regulated.gene']].replace(
+    #         list(self.name_df['id']), list(self.name_df['name']))
+    #     ground_truth['regulator.effect'] = ground_truth['regulator.effect'].astype('float64')
+    #     # convert y_true into a binary matrix
+    #     ground_truth.loc[ground_truth['regulator.effect'] > 0, 'regulator.effect'] = 1
+    #     # order of genes need to be consistent between ground_truth and prediction
+    #     ground_truth = ground_truth.sort_values(['regulator.gene', 'regulated.gene'], ascending=[True, True])
+    #     self.ground_truth = ground_truth
+    #     return ground_truth
 
     def get_baseline(self):
         self.baseline = 1 - self.ground_truth[self.ground_truth[self.value_col] == 0].shape[0] / \
@@ -419,7 +424,7 @@ class AUPRC:
 
     def plot_prec_recall(self, fn='Precision-Recall.png'):
         if self.recall is None or self.prec is None:
-            raise ValueError('Calculate auprc first plotting. See method get_auprc')
+            raise ValueError('Calculate prc first plotting. See method get_auprc')
         plt.fill_between(self.recall, self.prec)
         plt.ylabel("Precision")
         plt.xlabel("Recall")
@@ -447,12 +452,11 @@ class AUPRC:
         # plt.savefig('aucroc.png')
         # plt.close()
 
-    def auprc(self,
-              pred_label,
-              ground_truth_files,
-              y_true_label='regulator.effect',
-              fn='adata.h5ad',
-              fig_fn='Precision-Recall.png'):
+    def prc(self,
+            pred_label, ground_truth: pd.DataFrame,
+            y_true_label='regulator.effect',
+            fn='adata.h5ad',
+            fig_fn='Precision-Recall.png'):
         """
         Main logic method. SpaGRN.AUPRC pipeline
         1. generate ground truth
@@ -466,14 +470,16 @@ class AUPRC:
         :return:
         """
         # 1.
-        self.make_ground_truth(ground_truth_files, real_tfs=['2', '232', '408', '805', '1006'],
-                               false_tfs=['1140', '1141', '1142', '1143', '1144'])
+        # self.make_ground_truth(ground_truth_files, real_tfs=['2', '232', '408', '805', '1006'],
+        #                        false_tfs=['1140', '1141', '1142', '1143', '1144'])
         # self.get_baseline()
+        self.ground_truth = ground_truth
 
         # 2.
         if pred_label == 'spearman':
             self.get_pred_df_spearman(data=self.adata)
         else:
+            # self.adj = adj_df
             self.get_pred_df_grnboost()
             # self.get_pred_df()
         self.get_prediction_df(pred_label=pred_label)
@@ -487,11 +493,12 @@ class AUPRC:
         # self.adata.write_h5ad(fn)
 
     def roc(self,
-              pred_label,
-              ground_truth_files,
-              y_true_label='regulator.effect',
-              fn='adata.h5ad',
-              fig_fn='Precision-Recall.png'):
+            pred_label,
+            ground_truth: pd.DataFrame,
+            adj_df=None,
+            y_true_label='regulator.effect',
+            fn='adata.h5ad',
+            fig_fn='Precision-Recall.png'):
         """
         Main logic method. SpaGRN.AUPRC pipeline
         1. generate ground truth
@@ -505,14 +512,16 @@ class AUPRC:
         :return:
         """
         # 1.
-        self.make_ground_truth(ground_truth_files, real_tfs=['2', '232', '408', '805', '1006'],
-                               false_tfs=['1140', '1141', '1142', '1143', '1144'])
+        # self.make_ground_truth(ground_truth_files, real_tfs=['2', '232', '408', '805', '1006'],
+        #                        false_tfs=['1140', '1141', '1142', '1143', '1144'])
         # self.get_baseline()
+        self.ground_truth = ground_truth
 
         # 2.
         if pred_label == 'spearman':
             self.get_pred_df_spearman(data=self.adata)
         else:
+            # self.adj = adj_df
             self.get_pred_df_grnboost()
             # self.get_pred_df()
         self.get_prediction_df(pred_label=pred_label)
@@ -524,7 +533,7 @@ class AUPRC:
         # self.adata.write_h5ad(fn)
 
 
-def cal_auprc(adata, tfs, name_df, pred_label='spearman', ground_truth_files='', fn='adata.h5ad'):
+def cal_auprc(tfs, name_df, ground_truth, pred_label='spearman', adata=None, adj_fn=None, fn='adata.h5ad'):
     """
 
     :param adata:
@@ -537,13 +546,14 @@ def cal_auprc(adata, tfs, name_df, pred_label='spearman', ground_truth_files='',
     :return:
     """
     a = AUPRC(data=adata,
+              adj=adj_fn,
               tfs=tfs,
               name_df=name_df)
-    a.auprc(pred_label=pred_label, ground_truth_files=ground_truth_files, fn=fn)
+    a.prc(pred_label=pred_label, ground_truth=ground_truth, fn=fn)
     return a.auprc_ratio
 
 
-def cal_auroc(adata, tfs, name_df, pred_label='spearman', ground_truth_files='', fn='adata.h5ad'):
+def cal_auroc(tfs, name_df, ground_truth, pred_label='spearman', adata=None, adj_fn=None, fn='adata.h5ad'):
     """
 
     :param adata:
@@ -556,13 +566,58 @@ def cal_auroc(adata, tfs, name_df, pred_label='spearman', ground_truth_files='',
     :return:
     """
     a = AUPRC(data=adata,
+              adj=adj_fn,
               tfs=tfs,
               name_df=name_df)
-    a.roc(pred_label=pred_label, ground_truth_files=ground_truth_files, fn=fn)
+    a.roc(pred_label=pred_label, ground_truth=ground_truth, fn=fn)
     return a.auroc
 
 
-def calculate_multi_samples(methods):
+def make_ground_truth(ground_truth_files, name_df: pd.DataFrame, all_genes: list, real_tfs=None, false_tfs=None):
+    """
+
+    :param ground_truth_files:
+    :param name_df:
+    :param all_genes:
+    :param real_tfs:
+    :param false_tfs:
+    :return:
+    """
+    # names = pd.read_csv(naming_fn)
+    fl = glob.glob(ground_truth_files)
+    df_true = pd.concat([pd.read_csv(i) for i in fl]).astype(str)
+
+    # adata = sc.read_h5ad(adata_fn)
+    # if self.adata is None:
+    #     self.adata = adata
+    # all_genes = adata.var_names
+    ground_truth = pd.DataFrame(product(tfs, all_genes), columns=['regulator.gene', 'regulated.gene']).astype(
+        str)
+    # ! make sure gene names are using the same nomenclature
+    ground_truth['regulated.gene'] = ground_truth['regulated.gene'].replace(list(name_df['name']),
+                                                                            list(name_df['id']))
+    ground_truth['regulator.effect'] = [0] * ground_truth.shape[0]
+    ground_truth = pd.concat([ground_truth, df_true])
+    ground_truth = ground_truth.drop_duplicates(['regulator.gene', 'regulated.gene'], keep='last')
+
+    # if false TF exists
+    if real_tfs and false_tfs:
+        t_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(real_tfs)]
+        f_ground_truth = ground_truth[ground_truth['regulator.gene'].isin(false_tfs)]
+        f_ground_truth['regulator.effect'] = [0.0] * f_ground_truth.shape[0]
+        ground_truth = pd.concat([t_ground_truth, f_ground_truth])
+
+    ground_truth[['regulator.gene', 'regulated.gene']] = ground_truth[['regulator.gene', 'regulated.gene']].replace(
+        list(name_df['id']), list(name_df['name']))
+    ground_truth['regulator.effect'] = ground_truth['regulator.effect'].astype('float64')
+    # convert y_true into a binary matrix
+    ground_truth.loc[ground_truth['regulator.effect'] > 0, 'regulator.effect'] = 1
+    # order of genes need to be consistent between ground_truth and prediction
+    ground_truth = ground_truth.sort_values(['regulator.gene', 'regulated.gene'], ascending=[True, True])
+    return ground_truth
+
+
+def calculate_multi_samples(methods, data_fn_base, tfs, names, ver7_ground_truth):
     data_nums = list(range(2, 12))
     ratios = {}
     aurocs = {}
@@ -571,21 +626,35 @@ def calculate_multi_samples(methods):
         aurocs[method] = []
         for num in data_nums:
             data_folder = os.path.join(data_fn_base, f'data{num}')
-            data_fn = os.path.join(data_folder, f'hetero_{num}.h5ad')
             if method == 'hotspot':
+                data_fn = os.path.join(data_folder, f'{method}/{method}_spagrn.h5ad')
+                adata = sc.read_h5ad(data_fn)
                 pred_label = 'spearman'
-            else:
+                ratio = cal_auprc(tfs, names, adata=adata, pred_label=pred_label, ground_truth=ver7_ground_truth)
+            elif method == 'HOTSPOT':
+                data_fn = os.path.join(data_folder, f'{method}/hotspot.h5ad')
+                adata = sc.read_h5ad(data_fn)
+                pred_label = 'importance'
+                ratio = cal_auprc(tfs, names, adata=adata, pred_label=pred_label, ground_truth=ver7_ground_truth)
+            elif method == 'genie3':
+                data_fn = os.path.join(data_folder, f'{method}/genie3.adj.csv')
+                df = pd.read_csv(data_fn)
+                ratio = cal_auprc(tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth, adj_fn=df)
+                pred_label = 'importance'
+            elif method == 'grnboost':
+                data_fn = os.path.join(data_folder, f'{method}/grnboost_adj.csv')
+                df = pd.read_csv(data_fn)
+                ratio = cal_auprc(tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth, adj_fn=df)
                 pred_label = 'importance'
 
-            adata = sc.read_h5ad(data_fn)
-            ratio = cal_auprc(adata, tfs, names, pred_label=pred_label, ground_truth_files=ver7_ground_truth)
+            # adata = sc.read_h5ad(data_fn)
             ratios[method].append(ratio)
-            auroc = cal_auroc(adata, tfs, names, pred_label=pred_label, ground_truth_files=ver7_ground_truth)
+            auroc = cal_auroc(adata, tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth)
             aurocs[method].append(auroc)
 
-    with open('ratios.json', 'w') as f:
+    with open('ratios.json_sub', 'w') as f:
         json.dump(ratios, f, sort_keys=True, indent=4)
-    with open('aurocs.json', 'w') as f:
+    with open('aurocs.json_sub', 'w') as f:
         json.dump(aurocs, f, sort_keys=True, indent=4)
     return ratios, aurocs
 
@@ -619,7 +688,7 @@ def auroc_boxplot(aurocs, methods, x_labels=None, fn='auroc_ratio_boxplot.pdf'):
 
 
 if __name__ == '__main__':
-    names = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/name_df.csv')
+    # names = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/name_df.csv')
     '''
     print(names)
     id,name
@@ -627,14 +696,15 @@ if __name__ == '__main__':
     232,Aef1
     408,grh
     '''
-    tfs = [2, 232, 408, 805, 1006, 1140, 1141, 1142, 1143, 1144]
-    ver7_ground_truth = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/GRN_params_*.csv'
-    data_fn_base = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8'
+    # tfs = [2, 232, 408, 805, 1006, 1140, 1141, 1142, 1143, 1144]
+    # ver7_ground_truth = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/GRN_params_*.csv'
+    # data_fn_base = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8'
 
     # for one sample
     # 2023-10-24: test h5ad adj & regulons: success
     # adata = sc.read_h5ad('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/data11/HOTSPOT.h5ad')
     # adata = sc.read_h5ad('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/data11/hetero_11.h5ad')
+    # test run for GENIE3
     # adj_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/data11/genie3.adj.csv'
     # adj_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/grnboost_adj.csv'
     # reg_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/data11/grnboost/grnboost_regulons.json'
@@ -648,12 +718,13 @@ if __name__ == '__main__':
     #     rs = json.load(open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/ratios.json'))
     #     aus = json.load(open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/aurocs.json'))
     # else:
-    methods = ['hotspot', 'grnboost', 'genie3', 'HOTSPOT']
-    rs, aus = calculate_multi_samples(methods)
-    ratios_boxplot(rs, methods)
-    auroc_boxplot(aus, methods)
+    # 2023-10-26: final version
+    # methods = ['hotspot', 'grnboost', 'genie3', 'HOTSPOT']
+    # rs, aus = calculate_multi_samples(methods)
+    # ratios_boxplot(rs, methods)
+    # auroc_boxplot(aus, methods)
 
-    # 2023-10-25
+    # 2023-10-25, 27
     # 补run HOTSPOT
     # ratios = json.load(open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/ratios.json'))
     # aurocs = json.load(open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/aurocs.json'))
@@ -680,5 +751,127 @@ if __name__ == '__main__':
     # with open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/aurocs.json', 'w') as f:
     #     json.dump(aurocs, f, sort_keys=True, indent=4)
     #
-    # ratios_boxplot(ratios)
-    # auroc_boxplot(aurocs)
+    # ratios_boxplot(ratios, methods=['hotspot', 'grnboost', 'genie3', 'HOTSPOT'])
+    # auroc_boxplot(aurocs, methods=['hotspot', 'grnboost', 'genie3', 'HOTSPOT'])
+
+    # 2023-11-13: run subdata results
+    names = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/name_df.csv')
+    # ver7_ground_truth = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver7/GRN_params_*.csv'
+    adata = sc.read_h5ad('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/data11/hetero_11.h5ad')
+    tfs = [2, 232, 408, 805, 1006, 1140, 1141, 1142, 1143, 1144]
+    # a = AUPRC(data=adata,
+    #           tfs=tfs,
+    #           name_df=names)
+    # gt = a.make_ground_truth(ver7_ground_truth, real_tfs=['2', '232', '408', '805', '1006'], false_tfs=['1140', '1141', '1142', '1143', '1144'])
+    # print(gt)
+    # gt.to_csv('ground_truth_ver7.csv', index=False)
+    ver7_ground_truth_fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/ground_truth_ver7.csv'
+    ver7_ground_truth = pd.read_csv(ver7_ground_truth_fn)
+
+    data_fn_base200 = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/subdata_200/'
+    data_fn_base100 = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/subdata_100/'
+
+    # ratios = {}
+    # aurocs = {}
+    # data_nums = list(range(2, 12))
+    # methods = ['hotspot', 'HOTSPOT']
+    # for method in methods:
+    #     ratios[method] = []
+    #     aurocs[method] = []
+    #     for num in data_nums:
+    #         data_folder = os.path.join(data_fn_base100, f'data{num}')
+    #         data_fn = os.path.join(data_folder, f'{method}.h5ad')
+    #         if method == 'hotspot':
+    #             pred_label = 'spearman'
+    #         else:
+    #             pred_label = 'importance'
+    #         adata = sc.read_h5ad(data_fn)
+    #         ratio = cal_auprc(adata, tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth)
+    #         ratios[method].append(ratio)
+    #         auroc = cal_auroc(adata, tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth)
+    #         aurocs[method].append(auroc)
+    # with open(f'{data_fn_base100}/ratios.json', 'w') as f:
+    #     json.dump(ratios, f, sort_keys=True, indent=4)
+    # with open(f'{data_fn_base100}/aurocs.json', 'w') as f:
+    #     json.dump(aurocs, f, sort_keys=True, indent=4)
+
+    # ratios = json.load(open(f'{data_fn_base200}/ratios.json'))
+    # aurocs = json.load(open(f'{data_fn_base200}/aurocs.json'))
+    # data_nums = list(range(2, 12))
+    # methods = ['grnboost', 'genie3']
+    # for method in methods:
+    #     ratios[method] = []
+    #     aurocs[method] = []
+    #     for num in data_nums:
+    #         data_folder = os.path.join(data_fn_base200, f'data{num}')
+    #         data_fn = os.path.join(data_folder, f'{method}.csv')
+    #         if method == 'hotspot':
+    #             pred_label = 'spearman'
+    #         else:
+    #             pred_label = 'importance'
+    #         df = pd.read_csv(data_fn)
+    #         ratio = cal_auprc(tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth, adj_fn=df)
+    #         ratios[method].append(ratio)
+    #         auroc = cal_auroc(tfs, names, pred_label=pred_label, ground_truth=ver7_ground_truth, adj_fn=df)
+    #         aurocs[method].append(auroc)
+    # with open(f'{data_fn_base200}/ratios.json', 'w') as f:
+    #     json.dump(ratios, f, sort_keys=True, indent=4)
+    # with open(f'{data_fn_base200}/aurocs.json', 'w') as f:
+    #     json.dump(aurocs, f, sort_keys=True, indent=4)
+    def list_insert(my_list,n_blanks=2):
+        insert_positions = range(n_blanks, len(my_list) + n_blanks * (len(my_list) // 10 + 1), 10)
+        new_list = []
+        for i, val in enumerate(my_list):
+            new_list.append(val)
+            if i + 1 in insert_positions:
+                new_list.extend([None] * n_blanks)
+        return new_list
+
+
+    ratios = json.load(open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/ratios.json'))
+    aurocs = json.load(open('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/07.simulation/ver8/aurocs.json'))
+    ratios200 = json.load(open(f'{data_fn_base200}/ratios.json'))
+    aurocs200 = json.load(open(f'{data_fn_base200}/aurocs.json'))
+    ratios100 = json.load(open(f'{data_fn_base100}/ratios.json'))
+    aurocs100 = json.load(open(f'{data_fn_base100}/aurocs.json'))
+
+    def plot_sub(ratios,ratios200,ratios100,fn='boxplot_subset.pdf'):
+        x_labels = ['SpaGRN(1500)', 'SpaGRN(1000)', 'SpaGRN(500)',
+                    'GRNBoost2(1500)', 'GRNBoost2(1000)', 'GRNBoost2(500)',
+                    'GENIE3(1500)', 'GENIE3(1000)', 'GENIE3(500)',
+                    'HOTSPOT(1500)', 'HOTSPOT(1000)', 'HOTSPOT(500)']
+        df = pd.DataFrame.from_records(ratios).astype('float64')
+        df = df[['hotspot', 'grnboost', 'genie3', 'HOTSPOT']]  # set order
+        df200 = pd.DataFrame.from_records(ratios200).astype('float64')
+        df200 = df200[['hotspot', 'grnboost', 'genie3', 'HOTSPOT']]  # set order
+        df200.columns = ['hotspot200', 'grnboost200', 'genie3200', 'HOTSPOT200']
+        df100 = pd.DataFrame.from_records(ratios100).astype('float64')
+        df100 = df100[['hotspot', 'grnboost', 'genie3', 'HOTSPOT']]  # set order
+        df100.columns = ['hotspot100', 'grnboost100', 'genie3100', 'HOTSPOT100']
+        df = pd.concat([df, df200, df100])
+        df = df[['hotspot', 'hotspot200', 'hotspot100',
+                 'grnboost', 'grnboost200', 'grnboost100',
+                 'genie3', 'genie3200', 'genie3100',
+                 'HOTSPOT', 'HOTSPOT200', 'HOTSPOT100']]
+
+        # Reshape the dataframe using melt()
+        df_melted = df.melt(var_name='Group', value_name='Value')
+        # cate = ['A'] * 90 + ['B'] * 90 + ['C'] * 90 + ['D'] * 90
+        # df_melted['category'] = cate
+        #
+        colors = ['green']*3 + ['orange']*3+['blue']*3+['red']*3
+        # # colors = ['green','orange','blue','red']
+        sns.set_palette(colors)
+        # # ax = sns.boxplot(data=df)
+        ax = sns.boxplot(x='Group', y='Value', data=df_melted)
+
+        plt.title('AUPRC ratios')
+        plt.ylabel('ratio')
+        ax.set_xticklabels(x_labels)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(fn, format='pdf')
+        plt.close()
+
+
+    plot_sub(aurocs,aurocs200,aurocs100)
