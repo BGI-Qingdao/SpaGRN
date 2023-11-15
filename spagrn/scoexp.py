@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Date: Created on 23 Oct 2023 16:09
 # @Author: Lidong GUO
-# @File: spagrn/scoexp.py
+# @File: spagrn/scc.py
 import sys
 # third party modules
 import pandas as pd
@@ -55,19 +55,18 @@ class ScoexpMatrix:
         return cor_mat
 
     @staticmethod
-    def scoexp(irn_data,
-               gene_list: list = [],
-               tf_list: list = [],
-               sigm=15,
-               zero_cutoff=5,
-               cor_method='spearman',
-               save_tmp: bool = True,
-               fn: str = 'adj.csv',
-               ):
+    def scc(irn_data,
+            gene_list: list = [],
+            tf_list: list = [],
+            sigm=15,
+            zero_cutoff=5,
+            cor_method='spearman',
+            save_tmp: bool = True,
+            fn: str = 'adj.csv',
+            ):
         """
-        Main logic for scoexp calculation
-
-        :param irn_data: object of InferenceRegulatoryNetwork
+        Main logic for infering gene regulatory network by spatially-aware cross-correlation (SCC) model
+        :param irn_data: object of spagrn.network.Network
         :param sigm: sigma for RBF kernel, default 15.
         :param gene_list: filter gene by exp cell > zero_cutoff% of all cells if len(gene_list)<2, otherwise use this gene set.
         :param tf_list: tf gene list. Use gene_list if tf_list is empty.
