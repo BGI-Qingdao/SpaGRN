@@ -80,15 +80,13 @@ class HandleNetwork(Network):
         sub_df.to_csv(fn, index=False, sep='\t')
 
     def get_cytoscape(self,
-                      tf: str,
-                      fn: str = 'cytoscape.txt'):
+                      tf: str):
         """
         Save GRN result of one TF, into Cytoscape format for down stream analysis
         :param tf: one target TF name
-        :param fn: output file name
         :return:
         Example:
-            grn.get_cytoscape(regulons, adjacencies, 'Gnb4', 'Gnb4_cytoscape.txt')
+            grn.get_cytoscape(regulons, adjacencies, 'Gnb4')
         """
         tf = tf if '(+)' not in tf else tf.replace('(+)', '')
         # get TF data
@@ -96,8 +94,43 @@ class HandleNetwork(Network):
             raise ValueError("run load_results(regulon_fn) first")
         if self.regulon_dict is None:
             self.regulon_dict = self.get_regulon_dict(self.regulons)
+        if f'{tf}(+)' not in self.regulon_dict:
+            print(f'{tf}(+) not found in data.')
+            return
+
         sub_adj = self.adjacencies[self.adjacencies.TF == tf]
         targets = self.regulon_dict[f'{tf}(+)']
         # all the target genes of the TF
         sub_df = sub_adj[sub_adj.target.isin(targets)]
-        sub_df.to_csv(fn, index=False, sep='\t')
+        sub_df.to_csv(f'{tf}_cytoscape.txt', index=False, sep='\t')
+
+    def get_metascape(self, tf):
+        tf = tf if '(+)' not in tf else tf.replace('(+)', '')
+        # get TF data
+        if self.regulons is None:
+            raise ValueError("run load_results(regulon_fn) first")
+        if self.regulon_dict is None:
+            self.regulon_dict = self.get_regulon_dict(self.regulons)
+        if f'{tf}(+)' not in self.regulon_dict:
+            print(f'{tf}(+) not found in data.')
+            return
+        targets = self.regulon_dict[f'{tf}(+)']
+        with open(f'{tf}_metascape.txt', 'w') as f:
+            f.writelines('\n'.join(targets))
+
+    def shared_targets(self, reg1, reg2):
+        """
+        Find shared targets between regulon1 and regulon2, target genes are ranked by their importance value.
+        :param reg1:
+        :param reg2:
+        :return:
+        """
+        pass
+
+    def get_targets(self, reg):
+        """
+        Get target genes of a regulon and save them into a text file.
+        :param reg:
+        :return:
+        """
+        pass
