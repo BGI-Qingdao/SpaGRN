@@ -22,7 +22,7 @@ We also provide an interactive 3D GRN atlas database, covering different GRN inf
 # Installation
 To install the latest version of SpaGRN via `PyPI`:
 ```
-pip install spagrn==1.0.5
+pip install spagrn==1.0.6
 ```
 Or install by bioconda
 
@@ -38,7 +38,7 @@ conda install -c bioconda spagrn
 
 SpaGRN can be imported as:
 ```
-from spagrn import InferRegulatoryNetwork as irn
+from spagrn import InferNetwork as irn
 from spagrn import plot as prn
 ```
 
@@ -74,9 +74,11 @@ The package provides functions for loading data, preprocessing data, reconstruct
 from spagrn import InferRegulatoryNetwork as irn
 
 if __name__ == '__main__':  #notice: to avoid concurrent bugs, please do not ignore this line!
-    database_fn='xxx'
-    motif_anno_fn='xxx'
-    tfs_fn='xxx'
+    database_fn='mouse.feather'
+    motif_anno_fn='mouse.tbl'
+    tfs_fn='mouse_TFs.txt'
+    # load Ligand-receptor data
+    niches = pd.read_csv('niches.csv')
     # Load data
     data = irn.read_file('data.h5ad')
     # Preprocess data
@@ -84,36 +86,44 @@ if __name__ == '__main__':  #notice: to avoid concurrent bugs, please do not ign
     # Initialize gene regulatory network
     grn = irn(data)
     # run main pipeline
-    grn.main(database_fn,
-             motif_anno_fn,
-             tfs_fn,
-             num_workers=cpu_count(),
-             cache=False,
-             save=True,
-             method=method,
-             prefix=prefix,
-             noweights=True)
+    grn.infer(database_fn,
+              motif_anno_fn,
+              tfs_fn,
+              niche_df=niches,
+              num_workers=cpu_count(),
+              cache=False,
+              save_tmp=True,
+              c_threshold=0.2,
+              layers=None,
+              latent_obsm_key='spatial',
+              model='danb',
+              n_neighbors=30,
+              weighted_graph=False,
+              cluster_label='celltype',
+              method='spg',
+              prefix='project',
+              noweights=False)
 ```
+All results will be save in a h5ad file, default file name is `spagrn.h5ad`.
 
 ## Visualization
 SpaGRN offers a wide range of data visualization methods.
 ### 1. Heatmap
 ```
 # read data from previous analysis
-data = irn.read_file('data.h5ad')
-data <- irn.preprocess(data)
-auc_mtx = pd.read_csv('auc.csv', index_col=0)
-# alternative, extract data from the grn object
-data = grn.data
-auc_mtx = grn.auc_mtx
+data = irn.read_file('spagrn.h5ad')
+auc_mtx = data.obsm['auc_mtx']
 
 # plot 
-prn.rss_heatmap(data,
-            auc_mtx,
-            cluster_label='annotation',
-            rss_fn='regulon_specificity_scores.txt'),
-            topn=5,
-            save=True)  
+prn.auc_heatmap(data,
+                auc_mtx,
+                cluster_label='annotation',
+                rss_fn='regulon_specificity_scores.txt',
+                topn=10,
+                subset=False,
+                save=True,
+                fn='clusters_heatmap_top10.pdf',
+                legend_fn="rss_celltype_legend_top10.pdf")  
 ```
 <img src="./resource/E14-16h_hotspot_clusters_heatmap_top5.png" width="400">
 
