@@ -37,5 +37,10 @@ setuptools.setup(
     license="GPL-3.0+",
     description="A comprehensive tool to infer TF-centered, spatial gene regulatory networks for the spatially resolved transcriptomic data.",
     platforms='any',
+    entry_points={
+        "console_scripts": [
+            "spagrn = spagrn.cli.spagrn:main",
+        ],
+    },
 )
 
