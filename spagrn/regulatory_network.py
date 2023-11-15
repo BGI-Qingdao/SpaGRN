@@ -300,9 +300,7 @@ class InferNetwork(Network):
                      fn=f'{prefix}_auc.csv')
 
         # 6.1. Receptor AUCs
-        # self.get_filtered_genes()
-        # self.get_filtered_receptors(niche_df, receptor_key=receptor_key, save_tmp=save_tmp, fn=f'{prefix}_filtered_targets_receptor.json')
-        if niche_df:
+        if niche_df is not None:
             self.get_receptors(niche_df, receptor_key=receptor_key, save_tmp=save_tmp,
                                fn=f'{prefix}_filtered_targets_receptor.json')
             self.receptor_auc()
