@@ -13,6 +13,7 @@ change log:
 """
 
 # python core modules
+import os
 
 # third party modules
 import anndata
@@ -24,7 +25,6 @@ import matplotlib.pyplot as plt
 from typing import Optional
 from pyscenic.rss import regulon_specificity_scores
 import matplotlib as mpl
-
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams['ps.fonttype'] = 42
 mpl.rcParams['svg.fonttype'] = 'none'
@@ -324,8 +324,8 @@ def auc_heatmap(data: anndata.AnnData,
                 save=True,
                 subset=True,
                 subset_size=5000,
-                fn='clusters_heatmap_top5.png',
-                legend_fn="rss_celltype_legend.png",
+                fn='clusters_heatmap_top5.pdf',
+                legend_fn="rss_celltype_legend.pdf",
                 cluster_list=None,
                 row_cluster=False,
                 col_cluster=True,
@@ -406,7 +406,8 @@ def auc_heatmap(data: anndata.AnnData,
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
     if save:
-        plt.savefig(fn)
+        file_format = os.path.splitext(fn)[1].replace('.','')
+        plt.savefig(fn, format=file_format)
     return g
 
 
@@ -488,7 +489,8 @@ def auc_heatmap_uneven(data: anndata.AnnData,
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
     if save:
-        plt.savefig(fn)
+        file_format = os.path.splitext(fn)[1].replace('.','')
+        plt.savefig(fn, format=file_format)
     return g
 
 
@@ -573,7 +575,8 @@ def auc_heatmap_reorder(data: anndata.AnnData,
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
     if save:
-        plt.savefig(fn)
+        file_format = os.path.splitext(fn)[1].replace('.','')
+        plt.savefig(fn, format=file_format)
     return g
 
 
@@ -713,7 +716,8 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
     # plt.setp(g.ax_heatmap.xaxis.get_majorticklabels(), rotation=45)
     if save:
         plt.tight_layout()
-        plt.savefig(fn)
+        file_format = os.path.splitext(fn)[1].replace('.','')
+        plt.savefig(fn, format=file_format)
     return g
 
 
@@ -805,7 +809,8 @@ def auc_heatmap_reorder3(data: anndata.AnnData,
     g.ax_heatmap.set_xlabel('')
     if save:
         plt.tight_layout()
-        plt.savefig(fn)
+        file_format = os.path.splitext(fn)[1].replace('.','')
+        plt.savefig(fn, format=file_format)
     return g
 
 
@@ -856,7 +861,7 @@ def highlight_key(color_dir: dict,
 
 
 def plot_legend(color_dir, marker='o', linestyle='', numpoints=1, ncol=3, loc='center', figsize=(10, 5),
-                fn='legend.png', **kwargs):
+                fn='legend.pdf', **kwargs):
     """
     Make separate legend file for heatmap
     :param color_dir:
@@ -882,7 +887,8 @@ def plot_legend(color_dir, marker='o', linestyle='', numpoints=1, ncol=3, loc='c
     plt.xticks([])
     plt.yticks([])
     plt.tight_layout()
-    plt.savefig(fn)
+    file_format = os.path.splitext(fn)[1].replace('.','')
+    plt.savefig(fn, format=file_format)
     plt.close()
 
 
@@ -1075,7 +1081,8 @@ def plot_2d(data: anndata.AnnData,
     plt.box(False)
     plt.axis('off')
     plt.colorbar(sc, shrink=0.35)
-    plt.savefig(fn, format='png')
+    file_format = os.path.splitext(fn)[1].replace('.', '')
+    plt.savefig(fn, format=file_format)
     plt.close()
 
 
@@ -1106,8 +1113,9 @@ def plot_celltype(adata, color='annotation', prefix='2d_plot', custom_labels=Non
         c = [color_dict[anno] for anno in data.obs[color]]
         plt.scatter(data.obsm['spatial']['x'], data.obsm['spatial']['y'], s=1, c=c, label=tf)
     plt.gca().set_aspect('equal')
-    plt.legend(loc='best')
-    plt.savefig(f'{prefix}_{color}_2d.png')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.savefig(f'{prefix}_{color}_2d.pdf', format='pdf')
     plt.close()
 
 
@@ -1151,16 +1159,27 @@ def plot_gene(data: anndata.AnnData,
         plt.axis('off')
     plt.title(gene_name)
     plt.colorbar(sc, shrink=0.35)
-    plt.savefig(fn)
+    file_format = os.path.splitext(fn)[1].replace('.', '')
+    plt.savefig(fn, format=file_format)
     plt.close()
 
 
-def plot_lr(data,
-            ligand: str,
-            receptor: str,
-            fn: str,
-            pos_label='spatial',
-            show_bg=False):
+def plot_ligand_receptor(data,
+                         ligand: str,
+                         receptor: str,
+                         fn: str,
+                         pos_label='spatial',
+                         show_bg=False):
+    """
+
+    :param data:
+    :param ligand:
+    :param receptor:
+    :param fn:
+    :param pos_label:
+    :param show_bg:
+    :return:
+    """
     # prepare plotting data
     cell_coor = data.obsm[pos_label]
     exp_mtx = data.to_df()
@@ -1198,12 +1217,91 @@ def plot_lr(data,
         plt.axis('off')
     plt.title(f'{ligand}_{receptor}')
     # plt.colorbar(sc, shrink=0.35)
-    plt.savefig(fn)
+    file_format = os.path.splitext(fn)[1].replace('.', '')
+    plt.savefig(fn, format=file_format)
     plt.close()
+
+
+class PlotDataParameters:
+    def __init__(self, cluster_list=None, cluster_label=None, subset=None, subset_size=None, rss_fn=None, order_fn=None, topn=None, mode=None):
+        self.cluster_list = cluster_list
+        self.cluster_label = cluster_label
+        self.subset = subset
+        self.rss_fn = rss_fn
+        self.order_fn = order_fn
+        self.topn = topn
+        self.subset_size = subset_size
+        self.mode = mode
+
+
+def generate_plot_data(data, auc_mtx, parameters):
+    cluster_list = parameters.cluster_list
+    subset = parameters.subset
+    rss_fn = parameters.rss_fn
+    order_fn = parameters.order_fn
+    topn = parameters.topreg
+    subset_size = parameters.subset_size
+    mode = parameters.mode
+    cluster_label = parameters.cluster_label
+
+    # Generate plot data based on the provided parameters
+    if cluster_list:
+        data = data[data.obs[cluster_label].isin(cluster_list)].copy()
+        auc_mtx = auc_mtx.loc[list(data.obs_names)]
+
+    if subset and len(data.obs) > subset_size:
+        fraction = subset_size / len(data.obs)
+        # do stratified sampling
+        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = draw_obs[cluster_label].sort_values()
+    else:
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = data.obs[cluster_label].sort_values()
+
+    celltypes = sorted(list(set(data.obs[cluster_label])))
+
+    # Regulon specificity scores (RSS) across predicted cell types
+    if rss_fn is None:
+        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+    else:
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
+
+    # load regulon order list
+    if order_fn:
+        with open(order_fn, 'r') as f:
+            topreg = f.read().splitlines()
+    elif topn is None:
+        topreg = list(auc_mtx.columns)
+    else:
+        topreg = get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
+
+    if cluster_list is None:
+        cluster_list = celltypes.copy()
+    colorsd = dict(zip(cluster_list, COLORS))
+    colormap = [colorsd[x] for x in cluster_list]
+
+    # plot z-score
+    auc_zscore = cal_zscore(auc_mtx)
+    try:
+        plot_data = auc_zscore[topreg].loc[cell_order.index]
+    except KeyError:
+        com_topreg = list(set(topreg).intersection(set(auc_zscore.columns)))
+        plot_data = auc_zscore[com_topreg].loc[cell_order.index]
+    # calculate mean values for each celltype
+    plot_data['celltype'] = cell_order
+    if mode == 'mean':
+        plot_data = plot_data.groupby(['celltype']).mean()
+    return plot_data, colorsd, colormap
 
 
 if __name__ == '__main__':
     # total celltypes for Drosophilidae data
-    cluster_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea',
+    fly3d_cluster_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea',
                     'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut',
                     'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
+
+    # # Create an instance of PlotDataParameters and set the required custom parameters
+    # params = PlotDataParameters()
+    # # Generate plot data with the custom parameters
+    # pdata = generate_plot_data(data, auc_mtx, 'annotaion', params)
