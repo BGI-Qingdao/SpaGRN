@@ -1086,17 +1086,19 @@ def plot_2d(data: anndata.AnnData,
     plt.close()
 
 
-def plot_celltype(adata, color='annotation', prefix='2d_plot', custom_labels=None):
+def plot_celltype(adata, color='annotation', prefix='cell_type', custom_labels=None, spatial_label='spatial'):
     """
 
     :param adata:
     :param color:
     :param prefix:
     :param custom_labels: labels associate with cell types. e.g. it's celltype1 in annotation, but you want to label it as 'ct1'
+    :param spatial_label:
     :return:
 
     Example:
-        spatial_plot_2d(adata, color='leiden', prefix=prefix)
+        tfs = ['Adf1', 'Aef1', 'grh', 'kn', 'tll']
+        plot_celltype(adata, color='celltype', prefix='ground_truth', custom_labels=tfs)
     """
     annotations = adata.obs[color].unique()
     import matplotlib.cm as cm
@@ -1108,14 +1110,14 @@ def plot_celltype(adata, color='annotation', prefix='2d_plot', custom_labels=Non
     else:
         labels = list(annotations)
 
-    for i, tf in enumerate(labels):  # tfs = ['Adf1', 'Aef1', 'grh', 'kn', 'tll']
+    for i, label in enumerate(labels):
         data = adata[adata.obs[color] == (i + 1)]
         c = [color_dict[anno] for anno in data.obs[color]]
-        plt.scatter(data.obsm['spatial']['x'], data.obsm['spatial']['y'], s=1, c=c, label=tf)
+        plt.scatter(data.obsm[spatial_label]['x'], data.obsm[spatial_label]['y'], s=1, c=c, marker='.', label=label)
     plt.gca().set_aspect('equal')
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.tight_layout()
-    plt.savefig(f'{prefix}_{color}_2d.pdf', format='pdf')
+    plt.savefig(f'{prefix}_{color}.pdf', format='pdf')
     plt.close()
 
 
