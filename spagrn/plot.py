@@ -329,6 +329,9 @@ def auc_heatmap(data: anndata.AnnData,
                 cluster_list=None,
                 row_cluster=False,
                 col_cluster=True,
+                cmap="YlGnBu",
+                vmin=-3, vmax=3,
+                yticklabels=True, xticklabels=True,
                 **kwargs):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
@@ -394,9 +397,9 @@ def auc_heatmap(data: anndata.AnnData,
                        annot=False,
                        square=False,
                        linecolor='gray',
-                       yticklabels=True, xticklabels=True,
-                       vmin=-3, vmax=3,
-                       cmap="YlGnBu",
+                       yticklabels=yticklabels, xticklabels=xticklabels,
+                       vmin=vmin, vmax=vmax,
+                       cmap=cmap,
                        row_colors=colormap,
                        row_cluster=row_cluster,
                        col_cluster=col_cluster,
@@ -1045,6 +1048,10 @@ def plot_2d(data: anndata.AnnData,
             reg_name: str,
             fn: str,
             pos_label='spatial',
+            marker='.',
+            edgecolors='none',
+            cmap='plasma',
+            lw=0,
             **kwargs):
     """
     Plot genes of one regulon on a 2D map
@@ -1071,10 +1078,10 @@ def plot_2d(data: anndata.AnnData,
     sc = plt.scatter(cell_coor[:, 0][zorder],
                      cell_coor[:, 1][zorder],
                      c=sub_zscore.iloc[zorder],
-                     marker='.',
-                     edgecolors='none',
-                     cmap='plasma',
-                     lw=0,
+                     marker=marker,
+                     edgecolors=edgecolors,
+                     cmap=cmap,
+                     lw=lw,
                      **kwargs)
     plt.axis("equal")
     plt.title(reg_name)
@@ -1086,7 +1093,7 @@ def plot_2d(data: anndata.AnnData,
     plt.close()
 
 
-def plot_celltype(adata, color='annotation', prefix='cell_type', custom_labels=None, spatial_label='spatial'):
+def plot_celltype(adata, color='annotation', fn='cell_type.png', custom_labels=None, spatial_label='spatial', s=1, marker='.'):
     """
 
     :param adata:
@@ -1113,11 +1120,14 @@ def plot_celltype(adata, color='annotation', prefix='cell_type', custom_labels=N
     for i, label in enumerate(labels):
         data = adata[adata.obs[color] == (i + 1)]
         c = [color_dict[anno] for anno in data.obs[color]]
-        plt.scatter(data.obsm[spatial_label]['x'], data.obsm[spatial_label]['y'], s=1, c=c, marker='.', label=label)
+        plt.scatter(data.obsm[spatial_label]['x'], data.obsm[spatial_label]['y'], s=s, c=c, marker=marker, label=label)
     plt.gca().set_aspect('equal')
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.tight_layout()
-    plt.savefig(f'{prefix}_{color}.pdf', format='pdf')
+    if fn is None:
+        fn ='cell_type.png'
+    file_format = os.path.splitext(fn)[1].replace('.', '')
+    plt.savefig(fn, format=file_format)
     plt.close()
 
 
@@ -1126,19 +1136,22 @@ def plot_gene(data: anndata.AnnData,
               fn: str,
               pos_label='spatial',
               show_bg=False,
+              marker='.',
+              edgecolors='none',
+              cmap='plasma',
+              lw=0,
               **kwargs):
     """
     Plot a gene on a 3D map
+    :param lw:
+    :param cmap:
+    :param edgecolors:
+    :param marker:
+    :param show_bg:
     :param pos_label:
     :param data:
     :param gene_name:
     :param fn:
-    :param view_vertical: vertical angle to view to the 3D object
-    :param view_horizontal: horizontal angle to view the 3D object
-    :param show_bg: if show background
-    :param xscale:
-    :param yscale:
-    :param zscale:
     :return:
 
     Example:
@@ -1151,10 +1164,10 @@ def plot_gene(data: anndata.AnnData,
     sc = plt.scatter(cell_coor['x'],
                      cell_coor['y'],
                      c=exp_mtx[gene_name],
-                     marker='.',
-                     edgecolors='none',
-                     cmap='plasma',
-                     lw=0, **kwargs)
+                     marker=marker,
+                     edgecolors=edgecolors,
+                     cmap=cmap,
+                     lw=lw, **kwargs)
 
     if not show_bg:
         plt.box(False)
