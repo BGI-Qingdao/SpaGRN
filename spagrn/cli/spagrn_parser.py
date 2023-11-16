@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-@file: spagrn.py
+@file: spagrn_parser.py
 @time: 2023/Nov/01
 @description: test file for inference gene regulatory networks module
 @author: Yao LI
@@ -11,190 +11,49 @@
 
 import os
 import sys
-sys.path.append('/Users/Oreo/PycharmProjects/SpaGRN/')
 import argparse
-import pandas as pd
-from pathlib import Path, PurePath
 from multiprocessing import cpu_count
 from spagrn.regulatory_network import InferNetwork as irn
-# import spagrn.plot as prn
-import scanpy as sc
+import spagrn.plot as prn
 
 
-def scc_command(args):
-    """
-        Infer co-expression modules.
-        """
-    print("Loading expression anndata.")
-    try:
-        ex_mtx = irn.read_file(
-            args.expression_mtx_fname.name)
-    except ValueError as e:
-        print(e)
-        sys.exit(1)
-
-    tf_names = irn.load_tfs(args.tfs_fname.name)
-
-    if args.sparse:
-        n_total_genes = len(ex_mtx[1])
-        n_matching_genes = len(ex_mtx[1].isin(tf_names))
-    else:
-        n_total_genes = len(ex_mtx.columns)
-        n_matching_genes = len(ex_mtx.columns.isin(tf_names))
-    if n_total_genes == 0:
-        print(
-            "The expression matrix supplied does not contain any genes. "
-            "Make sure the extension of the file matches the format (tab separation for TSV and "
-            "comma sepatration for CSV)."
-        )
-        sys.exit(1)
-    if float(n_matching_genes) / n_total_genes < 0.80:
-        print(
-            "Expression data is available for less than 80% of the supplied transcription factors."
-        )
-
-    print("Inferring regulatory networks.")
-    client, shutdown_callback = _prepare_client(
-        args.client_or_address, num_workers=args.num_workers
-    )
-    method = grnboost2 if args.method == "grnboost2" else genie3
-    try:
-        if args.sparse:
-            network = method(
-                expression_data=ex_mtx[0],
-                gene_names=ex_mtx[1],
-                tf_names=tf_names,
-                verbose=True,
-                client_or_address=client,
-                seed=args.seed,
-            )
-        else:
-            network = method(
-                expression_data=ex_mtx,
-                tf_names=tf_names,
-                verbose=True,
-                client_or_address=client,
-                seed=args.seed,
-            )
-    finally:
-        shutdown_callback(False)
-
-    print("Writing results to file.")
-    extension = PurePath(args.output.name).suffixes
-    network.to_csv(args.output.name, index=False, sep=suffixes_to_separator(extension))
+# def receptor_command(args):
+#     data = irn.read_file(args.expression_mtx_fname)
+#     grn = irn(data)
+#     grn.get_receptors(args.reference, receptor_key=args.receptor_key, save_tmp=args.save_tmp)
+#     data.write_h5ad(args.expression_mtx_fname)
 
 
-def spg_command(args):
-    """
-    Infer co-expression modules.
-    """
-    print("Loading expression anndata.")
-    try:
-        ex_mtx = irn.read_file(
-            args.expression_mtx_fname.name)
-    except ValueError as e:
-        print(e)
-        sys.exit(1)
-
-    tf_names = irn.load_tfs(args.tfs_fname.name)
-
-    if args.sparse:
-        n_total_genes = len(ex_mtx[1])
-        n_matching_genes = len(ex_mtx[1].isin(tf_names))
-    else:
-        n_total_genes = len(ex_mtx.columns)
-        n_matching_genes = len(ex_mtx.columns.isin(tf_names))
-    if n_total_genes == 0:
-        print(
-            "The expression matrix supplied does not contain any genes. "
-            "Make sure the extension of the file matches the format (tab separation for TSV and "
-            "comma sepatration for CSV)."
-        )
-        sys.exit(1)
-    if float(n_matching_genes) / n_total_genes < 0.80:
-        print(
-            "Expression data is available for less than 80% of the supplied transcription factors."
-        )
-
-    print("Inferring regulatory networks.")
-    client, shutdown_callback = _prepare_client(
-        args.client_or_address, num_workers=args.num_workers
-    )
-    method = spg if args.method == "spg" else scc
-    try:
-        if args.sparse:
-            network = method(
-                expression_data=ex_mtx[0],
-                gene_names=ex_mtx[1],
-                tf_names=tf_names,
-                verbose=True,
-                client_or_address=client,
-                seed=args.seed,
-            )
-        else:
-            network = method(
-                expression_data=ex_mtx,
-                tf_names=tf_names,
-                verbose=True,
-                client_or_address=client,
-                seed=args.seed,
-            )
-    finally:
-        shutdown_callback(False)
-
-    print("Writing results to file.")
-    extension = PurePath(args.output.name).suffixes
-    network.to_csv(args.output.name, index=False, sep=suffixes_to_separator(extension))
-
-
-def run_all(args):
-    fn = args.data
-    tfs_fn = args.tf
-    database_fn = args.database
-    motif_anno_fn = args.motif_anno
+def inference_command(args):
+    # avoid TypeError: stat: path should be string, bytes, os.PathLike or integer, not _io.TextIOWrapper
     out_dir = args.output
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-    method = args.method
-    prefix = os.path.join(out_dir, method)
-
+    prefix = os.path.join(out_dir, args.method)
     # load data
-    data = irn.read_file(fn)
+    data = irn.read_file(args.expression_mtx_fname)
     data = irn.preprocess(data)
-    sc.tl.pca(data)
-
     # create grn
     grn = irn(data)
-
-    # set parameters
-    grn.add_params('hotspot', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
-    grn.add_params('scc', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
-    grn.add_params('grnboost', {'prune_auc_threshold': 0.05, 'rank_threshold': 3000, 'auc_threshold': 0.05})
-
-    # niche data
-    niche_human = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_human.csv')
-    niche_mouse = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_mouse.csv')
-    niches = pd.concat([niche_mouse, niche_human])
-
     # run_all analysis
-    grn.infer(database_fn,
-              motif_anno_fn,
-              tfs_fn,
-              niche_df=niches,
-              num_workers=cpu_count(),
-              cache=False,
-              save_tmp=True,
-              c_threshold=0.2,
-              layers=None,
-              latent_obsm_key='spatial',
-              model='danb',  # bernoulli
-              n_neighbors=30,
-              weighted_graph=False,
-              cluster_label='celltype',
-              method=method,
-              prefix=prefix,
-              noweights=False,
-              rho_mask_dropouts=False)
+    grn.infer(args.database,
+              args.motif,
+              args.tfs_fname,
+              niche_df=args.reference,
+              num_workers=args.num_workers,
+              cache=args.cache,
+              save_tmp=args.save_tmp,
+              c_threshold=args.c_threshold,
+              layers=args.layer_key,
+              latent_obsm_key=args.latent_obsm_key,
+              model=args.model,
+              n_neighbors=args.n_neighbors,
+              weighted_graph=args.weighted_graph,
+              cluster_label=args.cluster_label,
+              method=args.method,
+              noweights=args.noweights,
+              rho_mask_dropouts=args.rho_mask_dropouts,
+              prefix=prefix)
 
 
 def add_computation_parameters(parser):
@@ -220,6 +79,7 @@ def add_computation_parameters(parser):
 
 def add_coexp_parameters(parser):
     group = parser.add_argument_group("co-expressed module generation arguments")
+    # SPG params
     group.add_argument(
         "--c_threshold",
         type=float,
@@ -228,7 +88,7 @@ def add_coexp_parameters(parser):
     )
     group.add_argument(
         "--layer_key",
-        type=argparse.FileType("r"),
+        type=str,
         default=None,
         help="",
     )
@@ -242,7 +102,7 @@ def add_coexp_parameters(parser):
     group.add_argument(
         "--latent_obsm_key",
         type=str,
-        default=None,
+        default='spatial',
         help="",
     )
     group.add_argument(
@@ -258,29 +118,144 @@ def add_coexp_parameters(parser):
         help="",
     )
     group.add_argument(
-        "--min_genes",
-        type=int,
-        default=20,
+        "--distances_obsp_key",
+        type=str,
         help="",
     )
     group.add_argument(
-        "--expression_mtx_fname",
-        type=argparse.FileType("r"),
+        "--neighborhood_factor",
+        type=str,
         help="",
     )
     group.add_argument(
-        "--mask_dropouts",
-        action="store_const",
-        const=True,
+        "--approx_neighbors",
+        type=str,
+        help="",
+    )
+    group.add_argument(
+        "--weighted_graph",
         default=False,
+        help="",
+    )
+    # SCC params
+    group.add_argument(
+        "--sigma",
+        type=int,
+        default=15,
+        help="",
+    )
+    group.add_argument(
+        "--zero_cutoff",
+        type=int,
+        default=5,
+        help="",
+    )
+    group.add_argument(
+        "--cor_method",
+        type=str,
+        default='spearman',
         help="",
     )
     return parser
 
 
+def add_ctx_parameters(parser):
+    group = parser.add_argument_group("Regulons Generation arguments")
+    group.add_argument(
+        "--rho_mask_dropouts",
+        action="store_const",
+        const=True,
+        default=False,
+        help="",
+    )
+    group.add_argument(
+        "--rank_threshold",
+        type=int,
+        default=1500,
+        help="",
+    )
+    group.add_argument(
+        "--prune_auc_threshold",
+        type=float,
+        default=0.5,
+        help="",
+    )
+    group.add_argument(
+        "--nes_threshold",
+        type=float,
+        default=0.5,
+        help="",
+    )
+    group.add_argument(
+        "--motif_similarity_fdr",
+        type=float,
+        default=0.05,
+        help="",
+    )
+    group.add_argument(
+        "--orthologuous_identity_threshold",
+        help="",
+    )
+    group.add_argument(
+        "--weighted_recovery",
+        help="",
+    )
+    group.add_argument(
+        "--module_chunksize",
+        help="",
+    )
+
+
+def add_aucell_parameters(parser):
+    group = parser.add_argument_group("Regulon Activity Calculation arguments")
+    group.add_argument(
+        "--auc_threshold",
+        type=float,
+        default=0.5,
+        help="",
+    )
+    group.add_argument(
+        "--noweights",
+        default=False,
+        help="",
+    )
+    group.add_argument(
+        "--normalize",
+        default=False,
+        help="",
+    )
+    group.add_argument(
+        "--seed",
+        type=int,
+        required=False,
+        default=None,
+        help="seed for generating random numbers",
+    )
+
+
+def add_receptor_parameters(parser):
+    group = parser.add_argument_group("Receptors Detection arguments")
+    group.add_argument(
+        "--reference",
+        # type=argparse.FileType("r"),
+        type=str,
+        help="",
+        default=None,
+        required=False,
+    )
+    group.add_argument(
+        "--receptor_key",
+        type=str,
+        default='to',
+        help="",
+        required=False,
+    )
+
+
 def create_argument_parser():
     parser = argparse.ArgumentParser(
-        prog=os.path.splitext(os.path.basename(__file__))[0],
+        prog='spagrn',
+        # prog=os.path.splitext(os.path.basename(__file__))[0],
         description="Spatial Gene Regulatory Network inference",
         fromfile_prefix_chars="@",
         add_help=True,
@@ -290,203 +265,374 @@ def create_argument_parser():
     subparsers = parser.add_subparsers(help="sub-command help")
 
     # --------------------------------------------
-    # create the parser for the "spg" command
+    # create the parser for the "infer" command
     # --------------------------------------------
-    parser_spg = subparsers.add_parser(
-        "spg", help="Derive regulons from expression matrix by spatial-proximity-graph (SPG) model."
+    parser_infer = subparsers.add_parser(
+        "infer", help="Derive regulons from SRT expression matrix and spatial coordinates."
     )
-    parser_spg.add_argument(
+    parser_infer.add_argument(
         "expression_mtx_fname",
-        type=argparse.FileType("r"),
-        help="",
+        # type=argparse.FileType("r"),
+        type=str,
+        help="The name of the file that contains the expression matrix for the single cell experiment."
+             " Two file formats are supported: csv (rows=cells x columns=genes) or loom (rows=genes x columns=cells).",
     )
-    parser_spg.add_argument(
+    parser_infer.add_argument(
         "tfs_fname",
-        type=argparse.FileType("r"),
-        help="",
+        # type=argparse.FileType("r"),
+        type=str,
+        help="TF list file.",
     )
-    parser_spg.add_argument(
-        "-d",
+    parser_infer.add_argument(
+        "-db",
         "--database",
-        type=argparse.FileType("r"),
-        help="ranked motifs database file, in feather format",
+        # type=argparse.FileType("r"),
+        type=str,
+        required=True,
+        help="ranked motifs database file, in feather format.",
     )
-    parser_spg.add_argument(
-        "-o",
-        "--output",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
-        help="Output file/stream, i.e. a table of TF-target genes (CSV).",
+    parser_infer.add_argument(
+        "--motif",
+        # type=argparse.FileType("r"),
+        type=str,
+        required=True,
+        help="motif annotation file, in tbl format.",
     )
-    parser_spg.add_argument(
+    parser_infer.add_argument(
         "-m",
         "--method",
-        choices=["genie3", "grnboost2"],
-        default="grnboost2",
-        help="The algorithm for gene regulatory network reconstruction (default: grnboost2).",
+        choices=["spg", "scc"],
+        default="spg",
+        help="The algorithm for gene regulatory network reconstruction (default: spg).",
     )
-    parser_spg.add_argument(
-        "--seed",
-        type=int,
-        required=False,
-        default=None,
-        help="Seed value for regressor random state initialization. Applies to both GENIE3 and GRNBoost2. The default is to use a random seed.",
+    parser_infer.add_argument(
+        "-c",
+        "--cluster_label",
+        default="annotation",
+        help="label storing cell type/cluster annotation.",
     )
-    add_computation_parameters(parser_spg)
-    parser_spg.set_defaults(func=spg_command)
-
-    # -----------------------------------------
-    # create the parser for the "scc" command
-    # -----------------------------------------
-    parser_scc = subparsers.add_parser(
-        "scc",
-        help='[Optional] Add Pearson correlations based on TF-gene expression to the network adjacencies output from the GRN step, and output these to a new adjacencies file. This will normally be done during the "ctx" step.',
-    )
-    parser_scc.add_argument(
-        "adjacencies",
-        type=argparse.FileType("r"),
-        help="The name of the file that contains the GRN adjacencies (output from the GRN step).",
-    )
-    parser_scc.add_argument(
-        "expression_mtx_fname",
-        type=argparse.FileType("r"),
-        help="The name of the file that contains the expression matrix for the single cell experiment."
-        " Two file formats are supported: csv (rows=cells x columns=genes) or loom (rows=genes x columns=cells).",
-    )
-    parser_scc.add_argument(
+    parser_infer.add_argument(
         "-o",
         "--output",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
+        # type=argparse.FileType("w"),
+        type=str,
+        # default=str(sys.stdout),
         help="Output file/stream, i.e. the adjacencies table with correlations (csv, tsv).",
     )
-    add_coexp_parameters(parser_scc)
-    parser_scc.set_defaults(func=scc_command)
+    add_computation_parameters(parser_infer)
+    add_coexp_parameters(parser_infer)
+    add_ctx_parameters(parser_infer)
+    add_aucell_parameters(parser_infer)
+    add_receptor_parameters(parser_infer)
+    parser_infer.set_defaults(func=inference_command)
 
-    # -----------------------------------------
+    # ----------------------------------------------
+    # create the parser for the "receptor" command
+    # ----------------------------------------------
+    # parser_receptor = subparsers.add_parser(
+    #     "receptor",
+    #     help="[Optional] Receptor detection.",
+    # )
+    # parser_receptor.add_argument(
+    #     "spagrn_output_fname",
+    #     type=str,
+    #     help="",
+    # )
+    # add_receptor_parameters(parser_receptor)
+    # parser_receptor.set_defaults(func=receptor_command)
+
+    # ------------------------------------------
     # create the parser for the "plot" command
-    # -----------------------------------------
-    parser_plot = subparsers.add_parser(
-        "plot",
-        help="Find enriched motifs for a gene signature and optionally prune targets from this signature based on cis-regulatory cues.",
+    # ------------------------------------------
+    # 'plot' subcommand
+    plot_parser = subparsers.add_parser('plot', help='Plot subcommand')
+    plot_parser.add_argument(
+        '-d',
+        '--data',
+        type=str,
+        # required=True,
+        help='Path to the data file'
     )
-    parser_plot.add_argument(
-        "module_fname",
-        type=argparse.FileType("r"),
-        help="The name of the file that contains the signature or the co-expression modules. "
-        "The following formats are supported: CSV or TSV (adjacencies), YAML, GMT and DAT (modules)",
+    plot_parser.add_argument(
+        '-n',
+        '--name',
+        # required=True,
+        type=str,
+        help='name for gene/regulon to plot.'
     )
-    parser_plot.add_argument(
-        "database_fname",
-        type=argparse.FileType("r"),
-        nargs="+",
-        help="The name(s) of the regulatory feature databases. "
-        "Two file formats are supported: feather or db (legacy).",
+    plot_parser.add_argument(
+        '--color',
+        default='celltype',
+        type=str,
+        help=''
     )
-    parser_plot.add_argument(
-        "-o",
-        "--output",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
-        help="Output file/stream, i.e. a table of enriched motifs and target genes (csv, tsv)"
-        " or collection of regulons (yaml, gmt, dat, json).",
-    )
-    parser_plot.add_argument(
-        "-n",
-        "--no_pruning",
-        action="store_const",
-        const="yes",
-        help="Do not perform pruning, i.e. find enriched motifs.",
-    )
-    parser_plot.add_argument(
-        "--chunk_size",
-        type=int,
-        default=100,
-        help="The size of the module chunks assigned to a node in the dask graph (default: 100).",
-    )
-    parser_plot.add_argument(
+    plot_parser.add_argument(
+        "-m",
         "--mode",
-        choices=["custom_multiprocessing", "dask_multiprocessing", "dask_cluster"],
-        default="custom_multiprocessing",
-        help="The mode to be used for computing (default: custom_multiprocessing).",
+        type=str,
+        choices=['gene', 'regulon', 'celltype'],
+        default='regulon',
+        help="choose to plot gene, regulon or celltype. (default: regulon) ",
     )
-    parser_plot.add_argument(
-        "-a",
-        "--all_modules",
-        action="store_const",
-        const="yes",
-        default="no",
-        help="Included positive and negative regulons in the analysis (default: no, i.e. only positive).",
+    plot_parser.add_argument(
+        "--dimension",
+        type=str,
+        choices=['2d', '3d', '2D', '3D'],
+        default='2d',
+        help="choose data dimension to plot, choices are {2d, 3d, 2D, 3D}. (default: 2d) ",
     )
-    parser_plot.add_argument(
-        "-t",
-        "--transpose",
-        action="store_const",
-        const="yes",
-        help="Transpose the expression matrix (rows=genes x columns=cells).",
+    plot_parser.add_argument(
+        '-p',
+        '--pos_label',
+        default='spatial',
+        type=str,
+        help=''
     )
-
-    # --------------------------------------------
-    # create the parser for the "util" command
-    # -------------------------------------------
-    parser_util = subparsers.add_parser(
-        "util", help="Quantify activity of gene signatures across single cells."
-    )
-
-    # Mandatory arguments
-    parser_util.add_argument(
-        "expression_mtx_fname",
-        type=argparse.FileType("r"),
-        help="The name of the file that contains the expression matrix for the single cell experiment."
-        " Two file formats are supported: csv (rows=cells x columns=genes) or loom (rows=genes x columns=cells).",
-    )
-    parser_util.add_argument(
-        "signatures_fname",
-        type=argparse.FileType("r"),
-        help="The name of the file that contains the gene signatures."
-        " Three file formats are supported: gmt, yaml or dat (pickle).",
-    )
-    # Optional arguments
-    parser_util.add_argument(
-        "-o",
-        "--output",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
-        help="Output file/stream, a matrix of AUC values."
-        " Two file formats are supported: csv or loom."
-        " If loom file is specified the loom file while contain the original expression matrix and the"
-        " calculated AUC values as extra column attributes.",
-    )
-    parser_util.add_argument(
-        "-t",
-        "--transpose",
-        action="store_const",
-        const="yes",
-        help="Transpose the expression matrix if supplied as csv (rows=genes x columns=cells).",
-    )
-    parser_util.add_argument(
-        "-w",
-        "--weights",
-        action="store_const",
-        const="yes",
-        help="Use weights associated with genes in recovery analysis."
-        " Is only relevant when gene signatures are supplied as json format.",
-    )
-    parser_util.add_argument(
-        "--num_workers",
-        type=int,
-        default=cpu_count(),
-        help="The number of workers to use (default: {}).".format(cpu_count()),
-    )
-    parser_util.add_argument(
-        "--seed",
-        type=int,
-        required=False,
+    plot_parser.add_argument(
+        '--custom_labels',
         default=None,
-        help="Seed for the expression matrix ranking step. The default is to use a random seed.",
+        help=''
+    )
+    plot_parser.add_argument(
+        '-o',
+        '--output',
+        # required=True,
+        type=str,
+        help=''
+    )
+    add_plot_parameters(plot_parser)
+    add_3d_parameters(plot_parser)
+    plot_parser.set_defaults(func=plot_command)
+
+    # for more plotting functions/alternatives
+    # make subcommands
+    plot_subparsers = plot_parser.add_subparsers(title='plot subcommands', dest='plot_command',
+                                                 help='plot subcommand help')
+
+    # 'heatmap' subcommand under 'plot'
+    heatmap_parser = plot_subparsers.add_parser('heatmap', help='Generate a heatmap')
+    heatmap_parser.add_argument(
+        '-d',
+        '--data',
+        type=str,
+        required=True,
+        help='Path to the data file'
+    )
+    heatmap_parser.add_argument(
+        '--cluster_label',
+        type=str,
+        default='annotation',
+        help='label for cell type/cluster annotation'
+    )
+    heatmap_parser.add_argument(
+        '--rss_fn',
+        type=str,
+        default=None,
+        help='Regulon specificity scores (RSS) file, a text file.'
+    )
+    heatmap_parser.add_argument(
+        '--topn',
+        type=int,
+        default=10,
+        help='select top N regulons for each cell type'
+    )
+    heatmap_parser.add_argument(
+        '--subset',
+        default=False,
+        help='If subset data by cells'
+    )
+    heatmap_parser.add_argument(
+        '--subset_size',
+        type=int,
+        default=5000,
+        help='If subset, number of cells to keep.'
+    )
+    heatmap_parser.add_argument(
+        '-o',
+        '--output',
+        type=str,
+        default='clusters_heatmap_top.png',
+        required=True,
+        help='Output image file name.'
+    )
+    heatmap_parser.add_argument(
+        '--legend_fn',
+        type=str,
+        default='rss_celltype_legend.png',
+        help='Output legend image file name.'
+    )
+    heatmap_parser.add_argument(
+        '--cluster_list',
+        default=None,
+        help='list of clusters to map celltype-color, generate legend.'
+    )
+    heatmap_parser.add_argument(
+        '--row_cluster',
+        default=False,
+    )
+    heatmap_parser.add_argument(
+        '--col_cluster',
+        default=False,
+    )
+    add_plot_parameters(heatmap_parser)
+    heatmap_parser.set_defaults(func=heatmap_command)
+
+    # 'heatmap' subcommand under 'plot'
+    web_parser = plot_subparsers.add_parser('web', help='Generate plot html file via Plotly')
+    web_parser.add_argument(
+        '-d',
+        '--data',
+        type=str,
+        required=True,
+        help='Path to the data file'
     )
 
     return parser
+
+
+def add_plot_parameters(parser):
+    group = parser.add_argument_group("General Plots arguments")
+    group.add_argument(
+        '--figsize',
+        default=(3, 5.5),
+        help='heatmap figure size, a tuple. (default: (3, 5.5))'
+    )
+    group.add_argument(
+        '--marker',
+        type=str,
+        default='.',
+        help=''
+    )
+    group.add_argument(
+        '--show_bg',
+        default=False,
+        help=''
+    )
+    group.add_argument(
+        '--cmap',
+        type=str,
+        default="YlGnBu",
+        help='Colormap for the heatmap'
+    )
+    group.add_argument(
+        '--annot',
+        default=False,
+        help=''
+    )
+    group.add_argument(
+        '--square',
+        default=False,
+        help=''
+    )
+    group.add_argument(
+        '--linecolor',
+        default="gray",
+        help=''
+    )
+    group.add_argument(
+        '--yticklabels',
+        default=False,
+        help=''
+    )
+    group.add_argument(
+        '--xticklabels',
+        default=True,
+        help=''
+    )
+    group.add_argument(
+        '--vmin',
+        default=-3,
+        help='minimum value'
+    )
+    group.add_argument(
+        '--vmax',
+        default=3,
+        help='max value'
+    )
+    group.add_argument(
+        '--s',
+        default=1,
+        type=float,
+        help='scatter s'
+    )
+    group.add_argument(
+        '--edgecolors',
+        type=str,
+        default='none',
+        help=''
+    )
+    group.add_argument(
+        '--lw',
+        default=0,
+        help='line weight'
+    )
+
+
+def add_3d_parameters(parser):
+    group = parser.add_argument_group("3D Plots arguments")
+    group.add_argument(
+        '-vv',
+        '--view_vertical',
+        type=int,
+        default=222,
+        help='vertical angle to view to the 3D object. range from 0 to 360.'
+    )
+    group.add_argument(
+        '-vh',
+        '--view_horizontal',
+        type=int,
+        default=-80,
+        help='horizontal angle to view the 3D object. range from 0 to 360.'
+    )
+    group.add_argument(
+        '--xscale',
+        type=float,
+        default=1,
+        help='scale of x axis. (default: 1)'
+    )
+    group.add_argument(
+        '--yscale',
+        type=float,
+        default=1,
+        help=''
+    )
+    group.add_argument(
+        '--zscale',
+        type=float,
+        default=1,
+        help=''
+    )
+
+
+def plot_command(args):
+    import scanpy as sc
+    adata = sc.read_h5ad(args.data)
+    auc_mtx = adata.obsm['auc_mtx']
+    if args.mode == 'celltype':
+        prn.plot_celltype(adata, color=args.color, spatial_label=args.pos_label, custom_labels=args.custom_labels,
+                          fn=args.output)
+                          # marker=args.marker, s=args.s)  # why the program keep crushing after added this line
+    elif args.mode == 'gene':
+        prn.plot_gene(adata, gene_name=args.name, fn=args.output, pos_label=args.pos_label, show_bg=args.show_bg,
+                      cmap=args.cmap)
+                # marker=args.marker, edgecolors=args.edgecolors, lw=args.lw)
+    elif args.mode == 'regulon':
+        if args.dimension in ['2d', '2D']:
+            prn.plot_2d(adata, auc_mtx, reg_name=args.name, fn=args.output, pos_label=args.pos_label, cmap=args.cmap)
+                        # marker=args.marker, edgecolors=args.edgecolors, lw=args.lw)
+        elif args.dimension in ['3d', '3D']:
+            prn.plot_3d_reg(adata, auc_mtx, reg_name=args.name, fn=args.output, view_vertical=args.view_vertical,
+                            view_horizontal=args.view_horizontal, show_bg=args.show_bg, pos_label=args.pos_label,
+                            xscale=args.xscale, yscale=args.yscale, zscale=args.zscale)
+
+
+def heatmap_command(args):
+    import scanpy as sc
+    adata = sc.read_h5ad(args.data)
+    auc_mtx = adata.obsm['auc_mtx']
+    prn.auc_heatmap(adata, auc_mtx, args.cluster_label, args.rss_fn, topn=args.topn, cmap=args.cmap,
+                    subset=args.subset, subset_size=args.subset_size, fn=args.output, legend_fn=args.legend_fn,
+                    cluster_list=args.cluster_list, row_cluster=args.row_cluster, col_cluster=args.col_cluster)
 
 
 def main(argv=None):
