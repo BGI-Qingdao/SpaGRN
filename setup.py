@@ -6,7 +6,7 @@ from pathlib import Path
 
 setuptools.setup(
     name="spagrn",
-    version="1.0.6",
+    version="1.0.6b",
     author="Yao LI, Lidong GUO, Mengyang XU",
     author_email="liyao1@genomics.cn, guolidong@genomics.cn, xumengyang@genomics.cn",
     url="https://github.com/BGI-Qingdao/SpaGRN",
@@ -39,7 +39,7 @@ setuptools.setup(
     platforms='any',
     entry_points={
         "console_scripts": [
-            "spagrn = spagrn.cli.spagrn:main",
+            "spagrn = spagrn.cli.spagrn_parser:main",
         ],
     },
 )
