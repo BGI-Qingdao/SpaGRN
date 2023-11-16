@@ -144,7 +144,7 @@ class InferNetwork(Network):
                 'auc_threshold': 0.5,
                 'noweights': False,
             },
-            'grnboost': {
+            'boost': {
                 'rank_threshold': 1500,
                 'prune_auc_threshold': 0.07,
                 'nes_threshold': 3.0,
@@ -175,7 +175,7 @@ class InferNetwork(Network):
               cache=True,
               prefix: str = 'project',
 
-              method='grnboost',
+              method='spg',
               sigm=15,
               c_threshold=0.8,
               layers='raw_counts',
@@ -203,7 +203,7 @@ class InferNetwork(Network):
         :param save_tmp:
         :param cache:
         :param prefix:
-        :param method: method from [grnboost/spg/scc]
+        :param method: method from [boost/spg/scc]
         :param sigm: sigma for scc, default 15 (assumption for 15um)
         :param layers:
         :param model:
@@ -214,7 +214,7 @@ class InferNetwork(Network):
         :param normalize:
         :return:
         """
-        assert method in ['grnboost', 'spg', 'scc'], "method options are grnboost/spg/scc"
+        assert method in ['boost', 'spg', 'scc'], "method options are boost/spg/scc"
         self.data.uns['method'] = method
         global adjacencies
         matrix = self._matrix
@@ -240,7 +240,7 @@ class InferNetwork(Network):
         dbs = self.load_database(databases)
 
         # 3. GRN Inference
-        if method == 'grnboost':
+        if method == 'boost':
             adjacencies = self.rf_infer(matrix,
                                         genes=target_genes,
                                         tf_names=tfs,
@@ -470,7 +470,7 @@ class InferNetwork(Network):
         :param fdr_threshold: Correlation threshold at which to stop assigning genes to modules
         :param tf_list: predefined TF names
         :param save_tmp: if save results onto disk
-        :param jobs: Number of parallel jobs to run
+        :param jobs: Number of parallel jobs to run_all
         :param cache:
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
@@ -678,7 +678,7 @@ class InferNetwork(Network):
         :return:
         """
         if self.receptor_dict is None:
-            print('receptor dict not found. run get_receptors first.')
+            print('receptor dict not found. run_all get_receptors first.')
             return
         # 1. create new modules
         receptor_modules = list(

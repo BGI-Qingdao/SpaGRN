@@ -1,4 +1,5 @@
 # spatialGRN
+# __package__ = 'spagrn'
 
 __all__ = ['regulatory_network', 'plot'] #, 'spa_logger']
 

@@ -11,12 +11,190 @@
 
 import os
 import sys
+sys.path.append('/Users/Oreo/PycharmProjects/SpaGRN/')
 import argparse
 import pandas as pd
+from pathlib import Path, PurePath
 from multiprocessing import cpu_count
 from spagrn.regulatory_network import InferNetwork as irn
-import spagrn.plot as prn
+# import spagrn.plot as prn
 import scanpy as sc
+
+
+def scc_command(args):
+    """
+        Infer co-expression modules.
+        """
+    print("Loading expression anndata.")
+    try:
+        ex_mtx = irn.read_file(
+            args.expression_mtx_fname.name)
+    except ValueError as e:
+        print(e)
+        sys.exit(1)
+
+    tf_names = irn.load_tfs(args.tfs_fname.name)
+
+    if args.sparse:
+        n_total_genes = len(ex_mtx[1])
+        n_matching_genes = len(ex_mtx[1].isin(tf_names))
+    else:
+        n_total_genes = len(ex_mtx.columns)
+        n_matching_genes = len(ex_mtx.columns.isin(tf_names))
+    if n_total_genes == 0:
+        print(
+            "The expression matrix supplied does not contain any genes. "
+            "Make sure the extension of the file matches the format (tab separation for TSV and "
+            "comma sepatration for CSV)."
+        )
+        sys.exit(1)
+    if float(n_matching_genes) / n_total_genes < 0.80:
+        print(
+            "Expression data is available for less than 80% of the supplied transcription factors."
+        )
+
+    print("Inferring regulatory networks.")
+    client, shutdown_callback = _prepare_client(
+        args.client_or_address, num_workers=args.num_workers
+    )
+    method = grnboost2 if args.method == "grnboost2" else genie3
+    try:
+        if args.sparse:
+            network = method(
+                expression_data=ex_mtx[0],
+                gene_names=ex_mtx[1],
+                tf_names=tf_names,
+                verbose=True,
+                client_or_address=client,
+                seed=args.seed,
+            )
+        else:
+            network = method(
+                expression_data=ex_mtx,
+                tf_names=tf_names,
+                verbose=True,
+                client_or_address=client,
+                seed=args.seed,
+            )
+    finally:
+        shutdown_callback(False)
+
+    print("Writing results to file.")
+    extension = PurePath(args.output.name).suffixes
+    network.to_csv(args.output.name, index=False, sep=suffixes_to_separator(extension))
+
+
+def spg_command(args):
+    """
+    Infer co-expression modules.
+    """
+    print("Loading expression anndata.")
+    try:
+        ex_mtx = irn.read_file(
+            args.expression_mtx_fname.name)
+    except ValueError as e:
+        print(e)
+        sys.exit(1)
+
+    tf_names = irn.load_tfs(args.tfs_fname.name)
+
+    if args.sparse:
+        n_total_genes = len(ex_mtx[1])
+        n_matching_genes = len(ex_mtx[1].isin(tf_names))
+    else:
+        n_total_genes = len(ex_mtx.columns)
+        n_matching_genes = len(ex_mtx.columns.isin(tf_names))
+    if n_total_genes == 0:
+        print(
+            "The expression matrix supplied does not contain any genes. "
+            "Make sure the extension of the file matches the format (tab separation for TSV and "
+            "comma sepatration for CSV)."
+        )
+        sys.exit(1)
+    if float(n_matching_genes) / n_total_genes < 0.80:
+        print(
+            "Expression data is available for less than 80% of the supplied transcription factors."
+        )
+
+    print("Inferring regulatory networks.")
+    client, shutdown_callback = _prepare_client(
+        args.client_or_address, num_workers=args.num_workers
+    )
+    method = spg if args.method == "spg" else scc
+    try:
+        if args.sparse:
+            network = method(
+                expression_data=ex_mtx[0],
+                gene_names=ex_mtx[1],
+                tf_names=tf_names,
+                verbose=True,
+                client_or_address=client,
+                seed=args.seed,
+            )
+        else:
+            network = method(
+                expression_data=ex_mtx,
+                tf_names=tf_names,
+                verbose=True,
+                client_or_address=client,
+                seed=args.seed,
+            )
+    finally:
+        shutdown_callback(False)
+
+    print("Writing results to file.")
+    extension = PurePath(args.output.name).suffixes
+    network.to_csv(args.output.name, index=False, sep=suffixes_to_separator(extension))
+
+
+def run_all(args):
+    fn = args.data
+    tfs_fn = args.tf
+    database_fn = args.database
+    motif_anno_fn = args.motif_anno
+    out_dir = args.output
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    method = args.method
+    prefix = os.path.join(out_dir, method)
+
+    # load data
+    data = irn.read_file(fn)
+    data = irn.preprocess(data)
+    sc.tl.pca(data)
+
+    # create grn
+    grn = irn(data)
+
+    # set parameters
+    grn.add_params('hotspot', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
+    grn.add_params('scc', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
+    grn.add_params('grnboost', {'prune_auc_threshold': 0.05, 'rank_threshold': 3000, 'auc_threshold': 0.05})
+
+    # niche data
+    niche_human = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_human.csv')
+    niche_mouse = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_mouse.csv')
+    niches = pd.concat([niche_mouse, niche_human])
+
+    # run_all analysis
+    grn.infer(database_fn,
+              motif_anno_fn,
+              tfs_fn,
+              niche_df=niches,
+              num_workers=cpu_count(),
+              cache=False,
+              save_tmp=True,
+              c_threshold=0.2,
+              layers=None,
+              latent_obsm_key='spatial',
+              model='danb',  # bernoulli
+              n_neighbors=30,
+              weighted_graph=False,
+              cluster_label='celltype',
+              method=method,
+              prefix=prefix,
+              noweights=False,
+              rho_mask_dropouts=False)
 
 
 def add_computation_parameters(parser):
@@ -155,7 +333,7 @@ def create_argument_parser():
         help="Seed value for regressor random state initialization. Applies to both GENIE3 and GRNBoost2. The default is to use a random seed.",
     )
     add_computation_parameters(parser_spg)
-    parser_spg.set_defaults(func=find_adjacencies_command)
+    parser_spg.set_defaults(func=spg_command)
 
     # -----------------------------------------
     # create the parser for the "scc" command
@@ -182,15 +360,8 @@ def create_argument_parser():
         default=sys.stdout,
         help="Output file/stream, i.e. the adjacencies table with correlations (csv, tsv).",
     )
-    parser_scc.add_argument(
-        "-t",
-        "--transpose",
-        action="store_const",
-        const="yes",
-        help="Transpose the expression matrix (rows=genes x columns=cells).",
-    )
     add_coexp_parameters(parser_scc)
-    parser_scc.set_defaults(func=addCorrelations)
+    parser_scc.set_defaults(func=scc_command)
 
     # -----------------------------------------
     # create the parser for the "plot" command
@@ -254,11 +425,6 @@ def create_argument_parser():
         const="yes",
         help="Transpose the expression matrix (rows=genes x columns=cells).",
     )
-    add_recovery_parameters(parser_plot)
-    add_annotation_parameters(parser_plot)
-    add_computation_parameters(parser_plot)
-    add_coexp_parameters(parser_plot)
-    parser_plot.set_defaults(func=prune_targets_command)
 
     # --------------------------------------------
     # create the parser for the "util" command
@@ -319,70 +485,8 @@ def create_argument_parser():
         default=None,
         help="Seed for the expression matrix ranking step. The default is to use a random seed.",
     )
-    add_recovery_parameters(parser_util)
-    parser_util.set_defaults(func=aucell_command)
 
     return parser
-
-
-def run():
-    parser = argparse.ArgumentParser(description='spaGRN tester')
-    parser.add_argument("--data", '-i', type=str, help='experiment data file, in h5ad/loom format')
-    parser.add_argument("--tf", '-t', type=str, help='TF list file')
-    parser.add_argument("--database", '-d', type=str, help='ranked motifs database file, in feather format')
-    parser.add_argument("--motif_anno", '-m', type=str, help='motifs annotation file, in tbl format')
-    parser.add_argument("--method", type=str, default='grnboost', choices=['grnboost', 'hotspot', 'scc'],
-                        help='method to calculate TF-gene similarity')
-    parser.add_argument("--output", '-o', type=str, help='output directory')
-    args = parser.parse_args(args=None if sys.argv[1:] else ['--help'])
-
-    fn = args.data
-    tfs_fn = args.tf
-    database_fn = args.database
-    motif_anno_fn = args.motif_anno
-    out_dir = args.output
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-    method = args.method
-    prefix = os.path.join(out_dir, method)
-
-    # load data
-    data = irn.read_file(fn)
-    data = irn.preprocess(data)
-    sc.tl.pca(data)
-
-    # create grn
-    grn = irn(data)
-
-    # set parameters
-    grn.add_params('hotspot', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
-    grn.add_params('scc', {'prune_auc_threshold': 0.05, 'rank_threshold': 9000, 'auc_threshold': 0.05})
-    grn.add_params('grnboost', {'prune_auc_threshold': 0.05, 'rank_threshold': 3000, 'auc_threshold': 0.05})
-
-    # niche data
-    niche_human = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_human.csv')
-    niche_mouse = pd.read_csv('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/resource/lr_network_mouse.csv')
-    niches = pd.concat([niche_mouse, niche_human])
-
-    # run analysis
-    grn.infer(database_fn,
-              motif_anno_fn,
-              tfs_fn,
-              niche_df=niches,
-              num_workers=cpu_count(),
-              cache=False,
-              save_tmp=True,
-              c_threshold=0.2,
-              layers=None,
-              latent_obsm_key='spatial',
-              model='danb',  # bernoulli
-              n_neighbors=30,
-              weighted_graph=False,
-              cluster_label='celltype',
-              method=method,
-              prefix=prefix,
-              noweights=False,
-              rho_mask_dropouts=False)
 
 
 def main(argv=None):
