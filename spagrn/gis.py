@@ -115,8 +115,17 @@ def compute_sparse_spatial_weights(coords, k=5):
     nbrs = NearestNeighbors(n_neighbors=k + 1, algorithm='ball_tree').fit(coords)
     distances, indices = nbrs.kneighbors(coords)
 
-    weights = np.zeros_like(distances)
-    weights[:, 1:] = 1 / distances[:, 1:]  # Inverse distance weights excluding self-distance
+    # weights = np.zeros_like(distances)
+    # weights[:, 1:] = 1 / distances[:, 1:]  # Inverse distance weights excluding self-distance
+
+    radius_ii = ceil(distances.shape[1] / 3)
+    sigma = distances[:, [radius_ii - 1]]
+    sigma[sigma == 0] = 1
+    weights = np.exp(-1 * distances ** 2 / sigma ** 2)
+    wnorm = weights.sum(axis=1, keepdims=True)
+    wnorm[wnorm == 0] = 1.0
+    weights = weights / wnorm
+
     row_indices = np.repeat(np.arange(coords.shape[0]), k)
     col_indices = indices[:, 1:].flatten()
     values = weights[:, 1:].flatten()
@@ -154,10 +163,8 @@ def compute_g_for_gene(args):
 def getis_g_parallel(gene_expression_matrix, spatial_weights, n_processes=None):
     n_genes = gene_expression_matrix.shape[1]
     pool_args = [(gene_idx, gene_expression_matrix, spatial_weights) for gene_idx in range(n_genes)]
-
     with multiprocessing.Pool(processes=n_processes) as pool:
         G_values = pool.map(compute_g_for_gene, pool_args)
-
     return np.array(G_values)
 
 
@@ -168,14 +175,12 @@ def getis_g(adata, weight='knn', layer_key='raw_counts', latent_obsm_key="spatia
         gene_expression_matrix = adata.layers[layer_key]
     else:
         gene_expression_matrix = adata.X
-
     # Step2: Compute the spatial weights matrix
     weight = compute_sparse_spatial_weights(cell_coordinates)
     print(weight.shape)
     neighbors, weights = neighbors_and_weights(cell_coordinates, n_neighbors=n_neighbors)
     print(neighbors)
     print(weights.shape)
-
     # Step3: Calculate Getis-Ord General G for each gene
     G_values = []
     for gene_idx in range(gene_expression_matrix.shape[1]):
@@ -201,7 +206,6 @@ def pseudo_data(num_cells=10, num_genes=5):
 # Compute p-values for spatial auto-correlation statics
 def tests(adata, Hx: np.array, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10) -> np.array:
     """
-
     :param adata:
     :param Hx:
     :param layer_key:
@@ -211,12 +215,95 @@ def tests(adata, Hx: np.array, layer_key='raw_counts', latent_obsm_key="spatial"
     # sc.pp.neighbors(adata, n_neighbors=n_neighbors)
     ind, neighbors, weights = neighbors_and_weights(cell_coordinates, n_neighbors=n_neighbors)
     adata.uns["neighbors"]["connectivities"] = weights
-    pc_c_m = sc.metrics.morans_i(adata, layer=layer_key)
+    pc_c_m = sc.metrics.morans_i(adata, layer=layer_key)  # shape: (n_gene, )
     pc_c_c = sc.metrics.gearys_c(adata, layer=layer_key)
     pc_c_g = getis_g(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
 
     p_values = np.array([pc_c_m, pc_c_c, pc_c_g, Hx])
     return p_values
+
+
+# def calculate_p_values(stat_values, n_cells):
+#     expected_value = -1 / (n_cells - 1)
+#     print(expected_value)
+#     variance = (n_cells ** 2 - 3 * n_cells + 3) / ((n_cells - 1) * (n_cells - 2) * (n_cells + 1)) - expected_value ** 2
+#     print(variance)
+#     z_scores = (stat_values - expected_value) / np.sqrt(variance)
+#     p_values = 2 * norm.cdf(-np.abs(z_scores))  # 双尾检验
+#     return p_values
+
+
+def calculate_morans_i_p_value(moran_i, n_cells, weights):  # TODO: why use spatial weights here?
+    # Calculate the expected value of Moran's I
+    E_I = -1 / (n_cells - 1)
+    print(E_I)
+    # Calculate the variance of Moran's I
+    S0 = np.sum(weights)
+    S1 = 0.5 * np.sum((weights + weights.T) ** 2)
+    S2 = np.sum((np.sum(weights, axis=0) + np.sum(weights, axis=1)) ** 2)
+    EI_squared = E_I ** 2
+    Var_I = (n_cells ** 2 * S1 - n_cells * S2 + 3 * S0 ** 2) / ((n_cells - 1) * (n_cells + 1) * S0 ** 2) - EI_squared
+    print(Var_I)
+    # Calculate the standard deviation of Moran's I
+    std_I = np.sqrt(Var_I)
+    # Calculate the Z-score
+    z_score = (moran_i - E_I) / std_I
+    # Calculate the p-value based on the Z-score
+    p_value = 2 * (1 - norm.cdf(abs(z_score)))  # Two-tailed test
+    return p_value
+
+
+def gearys_c_variance(x, w):
+    n = len(x)
+    W = np.sum(w)
+    mean_x = np.mean(x)
+    # Calculate the terms needed for variance
+    S0 = W
+    S1 = np.sum([(w[i, j] * (x[i] - x[j]) ** 2) ** 2 for i in range(n) for j in range(n)])
+    S2 = np.sum([(np.sum([w[i, j] * (x[i] - x[j]) ** 2 for j in range(n)])) ** 2 for i in range(n)])
+    # Expected value of C
+    E_C = 1
+    # Variance of C
+    var_C = ((n - 1) ** 2 * S1 - (n - 1) * S2 + 3 * S0 ** 2) / ((n - 1) * (n - 2) * (n - 3) * S0 ** 2)
+    return var_C
+
+
+def fdr(pvalues, alpha=0.05):
+    """
+    Calculate the p-value cut-off to control for
+    the false discovery rate (FDR) for multiple testing.
+    If by controlling for FDR, all of n null hypotheses
+    are rejected, the conservative Bonferroni bound (alpha/n)
+    is returned instead.
+    Parameters
+    ----------
+    pvalues     : array
+                  (n, ), p values for n multiple tests.
+    alpha       : float, optional
+                  Significance level. Default is 0.05.
+    Returns
+    -------
+                : float
+                  Adjusted criterion for rejecting the null hypothesis.
+                  If by controlling for FDR, all of n null hypotheses
+                  are rejected, the conservative Bonferroni bound (alpha/n)
+                  is returned.
+    Notes
+    -----
+    For technical details see :cite:`Benjamini:2001` and
+    :cite:`Castro:2006tz`.
+    """
+
+    n = len(pvalues)
+    p_sort = np.sort(pvalues)[::-1]
+    index = np.arange(n, 0, -1)
+    p_fdr = index * alpha / n
+    search = p_sort < p_fdr
+    sig_all = np.where(search)[0]
+    if len(sig_all) == 0:
+        return alpha / n
+    else:
+        return p_fdr[sig_all[0]]
 
 
 # Combine p-values
