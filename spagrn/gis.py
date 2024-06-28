@@ -6,13 +6,14 @@
 import scanpy as sc
 import numpy as np
 import pandas as pd
+import anndata as ad
 
-import hotspot
+# import hotspot
 from math import ceil
 from pynndescent import NNDescent
-from scipy.stats import chi2, norm
+from scipy.stats import chi2, norm, false_discovery_control
 from scipy.spatial.distance import pdist, squareform
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, issparse
 from sklearn.neighbors import NearestNeighbors
 
 import multiprocessing
@@ -41,34 +42,26 @@ def neighbors_and_weights(data, n_neighbors=30, neighborhood_factor=3, approx_ne
     """
     Computes nearest neighbors and associated weights for data
     Uses euclidean distance between rows of `data`
-
     Parameters
     ==========
     data: pandas.Dataframe num_cells x num_features
-
     Returns
     =======
     neighbors:      pandas.Dataframe num_cells x n_neighbors
     weights:  pandas.Dataframe num_cells x n_neighbors
-
     """
-
     coords = data.obsm['spatial']
-
-    nbrs = NearestNeighbors(n_neighbors=n_neighbors,algorithm="ball_tree").fit(coords)
+    nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm="ball_tree").fit(coords)
     dist, ind = nbrs.kneighbors()
     print(type(dist))
     print(type(ind))
-
     weights = compute_weights(
         dist, neighborhood_factor=neighborhood_factor)
-
     ind_df = pd.DataFrame(ind, index=data.obs_names)
     neighbors = ind_df
     print(neighbors)
     weights = pd.DataFrame(weights, index=neighbors.index,
                            columns=neighbors.columns)
-
     return ind, neighbors, weights
 
 
@@ -77,29 +70,12 @@ def flat_weights(cell_names, ind, weights, n_neighbors=30):
     cell2_indices = ind.flatten()  # starts from 0
     cell2 = cell_names[cell2_indices]
     weight = weights.flatten()
-
     df = pd.DataFrame({
         "Cell_x": cell1,
         "Cell_y": cell2,
         "Weight": weight
     })
     return df
-
-
-# Spatial Weights
-def compute_spatial_weights(coords):
-    """
-    Use euclidean distance as spatial weights
-    :param coords:
-    :return:
-    """
-    distances = squareform(pdist(coords))  # euclidean distance
-    # weights = np.zeros_like(distances)
-    # Inverse distance weights
-    np.fill_diagonal(distances, 1)  # Avoid division by zero for self-distances
-    weights = 1 / distances
-    np.fill_diagonal(weights, 0)  # when i=j, w=0. Set diagonal to 0 to ignore self-weights
-    return weights
 
 
 def compute_sparse_spatial_weights(coords, k=5):
@@ -114,10 +90,6 @@ def compute_sparse_spatial_weights(coords, k=5):
     from sklearn.neighbors import NearestNeighbors
     nbrs = NearestNeighbors(n_neighbors=k + 1, algorithm='ball_tree').fit(coords)
     distances, indices = nbrs.kneighbors(coords)
-
-    # weights = np.zeros_like(distances)
-    # weights[:, 1:] = 1 / distances[:, 1:]  # Inverse distance weights excluding self-distance
-
     radius_ii = ceil(distances.shape[1] / 3)
     sigma = distances[:, [radius_ii - 1]]
     sigma[sigma == 0] = 1
@@ -125,7 +97,6 @@ def compute_sparse_spatial_weights(coords, k=5):
     wnorm = weights.sum(axis=1, keepdims=True)
     wnorm[wnorm == 0] = 1.0
     weights = weights / wnorm
-
     row_indices = np.repeat(np.arange(coords.shape[0]), k)
     col_indices = indices[:, 1:].flatten()
     values = weights[:, 1:].flatten()
@@ -135,7 +106,7 @@ def compute_sparse_spatial_weights(coords, k=5):
 
 
 # Spatial Auto-correlation Statics
-def getis_ord_general_g(x, w):
+def _getis_ord_general_g(x, w):
     x = np.asarray(x)
     w = np.asarray(w)
     # Check for NaNs in gene expression values
@@ -156,7 +127,7 @@ def getis_ord_general_g(x, w):
 def compute_g_for_gene(args):
     gene_idx, gene_expression_matrix, spatial_weights = args
     gene_expression = gene_expression_matrix[:, gene_idx]
-    G = getis_ord_general_g(gene_expression, spatial_weights)
+    G = _getis_ord_general_g(gene_expression, spatial_weights)
     return G
 
 
@@ -168,7 +139,7 @@ def getis_g_parallel(gene_expression_matrix, spatial_weights, n_processes=None):
     return np.array(G_values)
 
 
-def getis_g(adata, weight='knn', layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10):
+def getis_g(adata, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10):
     # Step1: get cell coordinates and gene expression matrix
     cell_coordinates = adata.obsm[latent_obsm_key]
     if layer_key:
@@ -185,7 +156,7 @@ def getis_g(adata, weight='knn', layer_key='raw_counts', latent_obsm_key="spatia
     G_values = []
     for gene_idx in range(gene_expression_matrix.shape[1]):
         gene_expression = gene_expression_matrix[:, gene_idx]
-        G = getis_ord_general_g(gene_expression, weights)
+        G = _getis_ord_general_g(gene_expression, weights)
         G_values.append(G)
         # print(f"Getis-Ord General G statistic for gene {gene_idx + 1}: {G}")
     G_values = np.array(G_values)
@@ -204,32 +175,21 @@ def pseudo_data(num_cells=10, num_genes=5):
 
 
 # Compute p-values for spatial auto-correlation statics
-def tests(adata, Hx: np.array, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10) -> np.array:
-    """
-    :param adata:
-    :param Hx:
-    :param layer_key:
-    :param latent_obsm_key:
-    :return:
-    """
-    # sc.pp.neighbors(adata, n_neighbors=n_neighbors)
-    ind, neighbors, weights = neighbors_and_weights(cell_coordinates, n_neighbors=n_neighbors)
-    adata.uns["neighbors"]["connectivities"] = weights
-    pc_c_m = sc.metrics.morans_i(adata, layer=layer_key)  # shape: (n_gene, )
-    pc_c_c = sc.metrics.gearys_c(adata, layer=layer_key)
-    pc_c_g = getis_g(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
-
-    p_values = np.array([pc_c_m, pc_c_c, pc_c_g, Hx])
-    return p_values
-
-
-# def calculate_p_values(stat_values, n_cells):
-#     expected_value = -1 / (n_cells - 1)
-#     print(expected_value)
-#     variance = (n_cells ** 2 - 3 * n_cells + 3) / ((n_cells - 1) * (n_cells - 2) * (n_cells + 1)) - expected_value ** 2
-#     print(variance)
-#     z_scores = (stat_values - expected_value) / np.sqrt(variance)
-#     p_values = 2 * norm.cdf(-np.abs(z_scores))  # 双尾检验
+# def tests(adata, Hx: np.array, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10) -> np.array:
+#     """
+#     :param adata:
+#     :param Hx:
+#     :param layer_key:
+#     :param latent_obsm_key:
+#     :return:
+#     """
+#     # sc.pp.neighbors(adata, n_neighbors=n_neighbors)
+#     ind, neighbors, weights = neighbors_and_weights(cell_coordinates, n_neighbors=n_neighbors)
+#     adata.uns["neighbors"]["connectivities"] = weights
+#     pc_c_m = sc.metrics.morans_i(adata, layer=layer_key)  # shape: (n_gene, )
+#     pc_c_c = sc.metrics.gearys_c(adata, layer=layer_key)
+#     pc_c_g = getis_g(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
+#     p_values = np.array([pc_c_m, pc_c_c, pc_c_g, Hx])
 #     return p_values
 
 
@@ -256,61 +216,68 @@ def calculate_morans_i_p_value(moran_i, n_cells, weights):  # TODO: why use spat
 def gearys_c_variance(x, w):
     n = len(x)
     W = np.sum(w)
-    mean_x = np.mean(x)
-    # Calculate the terms needed for variance
     S0 = W
     S1 = np.sum([(w[i, j] * (x[i] - x[j]) ** 2) ** 2 for i in range(n) for j in range(n)])
     S2 = np.sum([(np.sum([w[i, j] * (x[i] - x[j]) ** 2 for j in range(n)])) ** 2 for i in range(n)])
-    # Expected value of C
-    E_C = 1
-    # Variance of C
     var_C = ((n - 1) ** 2 * S1 - (n - 1) * S2 + 3 * S0 ** 2) / ((n - 1) * (n - 2) * (n - 3) * S0 ** 2)
     return var_C
 
 
-def fdr(pvalues, alpha=0.05):
-    """
-    Calculate the p-value cut-off to control for
-    the false discovery rate (FDR) for multiple testing.
-    If by controlling for FDR, all of n null hypotheses
-    are rejected, the conservative Bonferroni bound (alpha/n)
-    is returned instead.
-    Parameters
-    ----------
-    pvalues     : array
-                  (n, ), p values for n multiple tests.
-    alpha       : float, optional
-                  Significance level. Default is 0.05.
-    Returns
-    -------
-                : float
-                  Adjusted criterion for rejecting the null hypothesis.
-                  If by controlling for FDR, all of n null hypotheses
-                  are rejected, the conservative Bonferroni bound (alpha/n)
-                  is returned.
-    Notes
-    -----
-    For technical details see :cite:`Benjamini:2001` and
-    :cite:`Castro:2006tz`.
-    """
+def gearys_c_p_value(C, var_C, tail='right'):
+    E_C = 1  # Expected value of Geary's C
+    Z = (C - E_C) / np.sqrt(var_C)  # Z-score
 
-    n = len(pvalues)
-    p_sort = np.sort(pvalues)[::-1]
-    index = np.arange(n, 0, -1)
-    p_fdr = index * alpha / n
-    search = p_sort < p_fdr
-    sig_all = np.where(search)[0]
-    if len(sig_all) == 0:
-        return alpha / n
-    else:
-        return p_fdr[sig_all[0]]
+    if tail == 'right':
+        p_value = 1 - norm.cdf(Z)
+    elif tail == 'left':
+        p_value = norm.cdf(Z)
+    else:  # two-tailed test
+        p_value = 2 * min(norm.cdf(Z), 1 - norm.cdf(Z))
+
+    return p_value
+
+
+# def fdr(pvalues, alpha=0.05):
+#     """
+#     Calculate the p-value cut-off to control for
+#     the false discovery rate (FDR) for multiple testing.
+#     If by controlling for FDR, all of n null hypotheses
+#     are rejected, the conservative Bonferroni bound (alpha/n)
+#     is returned instead.
+#     Parameters
+#     ----------
+#     pvalues     : array
+#                   (n, ), p values for n multiple tests.
+#     alpha       : float, optional
+#                   Significance level. Default is 0.05.
+#     Returns
+#     -------
+#                 : float
+#                   Adjusted criterion for rejecting the null hypothesis.
+#                   If by controlling for FDR, all of n null hypotheses
+#                   are rejected, the conservative Bonferroni bound (alpha/n)
+#                   is returned.
+#     Notes
+#     -----
+#     For technical details see :cite:`Benjamini:2001` and
+#     :cite:`Castro:2006tz`.
+#     """
+#     n = len(pvalues)
+#     p_sort = np.sort(pvalues)[::-1]
+#     index = np.arange(n, 0, -1)
+#     p_fdr = index * alpha / n
+#     search = p_sort < p_fdr
+#     sig_all = np.where(search)[0]
+#     if len(sig_all) == 0:
+#         return alpha / n
+#     else:
+#         return p_fdr[sig_all[0]]
 
 
 # Combine p-values
 def fishers_method(p_values: np.array) -> np.array:
     """
     Combines p-values using Fisher's Combined Probability Test.
-
     Fisher's method combines multiple p-values into a single p-value
     by summing the negative natural logarithms of the individual p-values
     and using a chi-squared distribution.
@@ -327,7 +294,6 @@ def fishers_method(p_values: np.array) -> np.array:
 def stouffers_method(p_values: np.array) -> np.array:
     """
     Combines p-values using Stouffer's Z-score Method.
-
     Stouffer's method combines multiple p-values into a single p-value
     by converting each p-value to a z-score, summing the z-scores,
     and then converting the sum back to a p-value using the standard
@@ -369,6 +335,77 @@ def get_combined_p_values(adata,
     p_values = tests(adata, Hx, layer_key=layer_key, latent_obsm_key=latent_obsm_key, n_neighbors=n_neighbors)
     combined_p_values = combine(p_values, method=method)
     return combined_p_values
+
+
+# in case sparse X in h5ad
+def format_gene_array(gene_array):
+    if scipy.sparse.issparse(gene_array):
+        gene_array = gene_array.toarray()
+    return gene_array.reshape(-1)
+
+
+# @params:
+#       adata:  input adata, will use the X matrix, obs and var dataframe
+#       weight: sparse weight in dataframe with 'Cell_x', 'Cell_y' and 'Weight'
+#       gene_x:
+#       gene_y:
+#
+def global_bivariate_morans_R(adata, weights, gene_x, gene_y):
+    # 1 gene name to matrix id
+    gene_x_id = adata.var.index.get_loc(gene_x)
+    gene_y_id = adata.var.index.get_loc(gene_y)
+    # 2 cell name to matrix id
+    tmp_obs = adata.obs
+    tmp_obs['id'] = np.arange(len(adata.obs))
+    cell_x_id = tmp_obs.loc[weights['Cell_x'].to_list()]['id'].to_numpy()
+    cell_y_id = tmp_obs.loc[weights['Cell_y'].to_list()]['id'].to_numpy()
+    # 3 get average
+    gene_x_exp_mean = adata.X[:, gene_x_id].mean()
+    gene_y_exp_mean = adata.X[:, gene_y_id].mean()
+    # 4 calculate denominator
+    gene_x_exp = format_gene_array(adata.X[:, gene_x_id])
+    gene_y_exp = format_gene_array(adata.X[:, gene_y_id])
+    denominator = np.sqrt(np.square(gene_x_exp - gene_x_exp_mean).sum()) * \
+                  np.sqrt(np.square(gene_y_exp - gene_y_exp_mean).sum())
+    # 5 calulate numerator
+    gene_x_in_cell_x = format_gene_array(adata.X[cell_x_id, gene_x_id])
+    gene_y_in_cell_y = format_gene_array(adata.X[cell_y_id, gene_y_id])
+    wij = weights['Weight'].to_numpy()
+    numerator = np.sum(wij * (gene_x_in_cell_x - gene_x_exp_mean) * (gene_y_in_cell_y - gene_y_exp_mean))
+    return numerator / denominator
+
+
+# @params:
+#       adata:  input adata, will use the X matrix, obs and var dataframe
+#       weight: sparse weight in dataframe with 'Cell_x', 'Cell_y' and 'Weight'
+#       gene_x:
+#       gene_y:
+#
+def global_bivariate_gearys_C(adata, weights, gene_x, gene_y):
+    # 1 gene name to matrix id
+    gene_x_id = adata.var.index.get_loc(gene_x)
+    gene_y_id = adata.var.index.get_loc(gene_y)
+    # 2 cell name to matrix id
+    tmp_obs = adata.obs
+    tmp_obs['id'] = np.arange(len(adata.obs))
+    cell_x_id = tmp_obs.loc[weights['Cell_x'].to_list()]['id'].to_numpy()
+    cell_y_id = tmp_obs.loc[weights['Cell_y'].to_list()]['id'].to_numpy()
+    # 3 get average
+    gene_x_exp_mean = adata.X[:, gene_x_id].mean()
+    gene_y_exp_mean = adata.X[:, gene_y_id].mean()
+    # 4 calculate denominator
+    gene_x_exp = format_gene_array(adata.X[:, gene_x_id])
+    gene_y_exp = format_gene_array(adata.X[:, gene_y_id])
+    denominator = np.sqrt(np.square(gene_x_exp - gene_x_exp_mean).sum()) * \
+                  np.sqrt(np.square(gene_y_exp - gene_y_exp_mean).sum())
+    # 5 calulate numerator
+    gene_x_in_cell_x = format_gene_array(adata.X[cell_x_id, gene_x_id])
+    gene_x_in_cell_y = format_gene_array(adata.X[cell_y_id, gene_x_id])
+    gene_y_in_cell_x = format_gene_array(adata.X[cell_x_id, gene_y_id])
+    gene_y_in_cell_y = format_gene_array(adata.X[cell_y_id, gene_y_id])
+    wij = weights['Weight'].to_numpy()
+    numerator = np.sum(wij * (gene_x_in_cell_x - gene_y_in_cell_x) * (gene_y_in_cell_y - gene_x_in_cell_y))
+    return numerator / denominator
 
 
 if __name__ == '__main__':
