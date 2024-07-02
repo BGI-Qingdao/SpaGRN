@@ -143,26 +143,39 @@ def cal_s0(w):
 #     return s1
 
 
-def cal_s1(w, n):
+def cal_s1(w):
     """
     s1 = 1/2 * sum_i sum_j (w_ij + w_ji)^2
     """
-    # n = w.shape[0]  # 获取矩阵的维度 n
-    # 使用广播机制构造 w_ij + w_ji 矩阵
+    # broadcast, create w_ij + w_ji 矩阵
     w_sum = w + w.T
     # 计算 s1
     s1 = 0.5 * np.sum(w_sum ** 2)
     return s1
 
 
-def cal_s2(w, n):
+# def cal_s2(w, n):
+#     """
+#     s2=\sum_j \Big(\sum_i w_{i,j} + \sum_i w_{j,i}\Big)^2
+#     """
+#     s2 = np.sum([
+#         (np.sum(w[i, :]) + np.sum(w[:, i])) ** 2
+#         for i in range(n)
+#     ])
+#     return s2
+
+
+def cal_s2(w):
     """
-    s2=\sum_j \Big(\sum_i w_{i,j} + \sum_i w_{j,i}\Big)^2
+    s2 = \sum_j (\sum_i w_{i,j} + \sum_i w_{j,i})^2
     """
-    s2 = np.sum([
-        (np.sum(w[i, :]) + np.sum(w[:, i])) ** 2
-        for i in range(n)
-    ])
+    # 计算行和列的和
+    row_sums = np.sum(w, axis=1)
+    col_sums = np.sum(w, axis=0)
+    # 计算 \sum_i w_{i,j} + \sum_i w_{j,i} 对每个 j
+    total_sums = row_sums + col_sums
+
+    s2 = np.sum(total_sums ** 2)
     return s2
 
 
@@ -181,21 +194,6 @@ def cal_k(adata, gene_x_id, n):
     return K
 
 
-def cal_bs(w, n):
-    '''for getis_g'''
-    s0 = cal_s0(w)
-    s02 = s0 * s0
-    s1 = cal_s1(w, n)
-    s2 = cal_s2(w, n)
-    n2 = n * n
-    b0 = (n2 - 3 * n + 3) * s1 - n * s2 + 3 * s02
-    b1 = (-1.0) * ((n2 - n) * s1 - 2 * n * s2 + 6 * s02)
-    b2 = (-1.0) * (2 * n * s1 - (n + 3) * s2 + 6 * s02)
-    b3 = 4 * (n - 1) * s1 - 2 * (n + 1) * s2 + 8 * s02
-    b4 = s1 - s2 + s02
-    return b0, b1, b2, b3, b4
-
-
 # -----------------------------------------------------#
 # Getis Ord General G
 # -----------------------------------------------------#
@@ -208,12 +206,7 @@ def getis_g(x, w):
     """
     x = np.asarray(x)
     w = np.asarray(w)
-    # Check for NaNs in gene expression values
-    if np.any(np.isnan(x)):
-        raise ValueError("Gene expression values contain NaNs.")
-    # Check for zeros in gene expression values
-    if np.all(x == 0):
-        raise ValueError("All gene expression values are zero.")
+
     numerator = np.sum(np.sum(w * np.outer(x, x)))
     denominator = np.sum(x ** 2)
     # Check for zero denominator
@@ -227,7 +220,7 @@ def getis_g_p_value_one_gene(G, w, x):
     n = w.shape[0]
     s0 = cal_s0(w)
     s02 = s0 * s0
-    s1 = cal_s1(w, n)
+    s1 = cal_s1(w)
 
     b0 = (n2 - 3 * n + 3) * s1 - n * s2 + 3 * s02
     b1 = (-1.0) * ((n2 - n) * s1 - 2 * n * s2 + 6 * s02)
@@ -336,23 +329,23 @@ def _morans_i_p_value_one_gene(adata, gene_x_id, weights, morans_i_array):
     EI = -1 / (n - 1)  # Moran’s I expected value
     K = cal_k(adata, gene_x_id, n)
     S0 = cal_s0(weights)
-    S1 = cal_s1(weights, n)
-    S2 = cal_s2(weights, n)
+    S1 = cal_s1(weights)
+    S2 = cal_s2(weights)
     # Variance
     part1 = (n * (S1 * (n ** 2 - 3 * n + 3) - n * S2 + 3 * np.square(S0))) / (
                 (n - 1) * (n - 2) * (n - 3) * np.square(S0))
     part2 = (K * (S1 * (n ** 2 - n) - 2 * n * S2 + 6 * np.square(S0))) / ((n - 1) * (n - 2) * (n - 3) * np.square(S0))
     VI = part1 - part2 - np.square(EI)
 
-    n2 = n * n
-    S02 = S0 * S0
-    v_num = n2 * S1 - n * S2 + 3 * S02
-    v_den = (n - 1) * (n + 1) * S02
-    VI_norm = v_num / v_den - (1.0 / (n - 1)) ** 2
-
-    seI_norm = VI_norm ** (1 / 2.0)
-    z_norm = (I - EI) / seI_norm
-    p_norm = stats.norm.sf(z_norm)
+    # n2 = n * n
+    # S02 = S0 * S0
+    # v_num = n2 * S1 - n * S2 + 3 * S02
+    # v_den = (n - 1) * (n + 1) * S02
+    # VI_norm = v_num / v_den - (1.0 / (n - 1)) ** 2
+    #
+    # seI_norm = VI_norm ** (1 / 2.0)
+    # z_norm = (I - EI) / seI_norm
+    # p_norm = stats.norm.sf(z_norm)
 
     stdI = np.sqrt(VI)
     # Z score
@@ -369,10 +362,7 @@ def _morans_i_p_value_one_gene(adata, gene_x_id, weights, morans_i_array):
         print(f'VI: {VI}')
         print(f'p_norm: {p_norm}')
         print(f'EI: {EI}, VI: {VI}, p_value: {p_value}')
-    # print(f'one fdr: {fdr_p_value}')
-    # return fdr_p_value
-    # return p_value
-    return p_norm
+    return p_value
 
 
 # parallel computing
@@ -432,8 +422,8 @@ def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
     EC = 1
     K = cal_k(adata, gene_x_id, n)
     S0 = cal_s0(weights)
-    S1 = cal_s1(weights, n)
-    S2 = cal_s2(weights, n)
+    S1 = cal_s1(weights)
+    S2 = cal_s2(weights)
     part1 = (n - 1) * S1 * (n ** 2 - 3 * n + 3 - K * (n - 1)) / (np.square(S0) * n * (n - 2) * (n - 3))
     part2 = (n ** 2 - 3 - K * np.square(n - 1)) / (n * (n - 2) * (n - 3))
     part3 = (n - 1) * S2 * (n ** 2 + 3 * n - 6 - K * (n ** 2 - n + 2)) / (4 * n * (n - 2) * (n - 3) * np.square(S0))
@@ -441,8 +431,7 @@ def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
 
     Z = (C - EC) / np.sqrt(VC)
     p_value = 1 - norm.cdf(Z)
-    fdr_p_value = fdr(p_value)
-    return fdr_p_value
+    return p_value
 
 
 # parallel computing
@@ -493,7 +482,10 @@ def somde_p_values(adata, k=20, latent_obsm_key="spatial"):
     from somde import SomNode
     som = SomNode(X, k)
     ndf, ninfo = som.mtx(df)
+    print(f'ndf: {ndf}')
+    print(f'ninfo: {ninfo}')
     nres = som.norm()
+    print(f'nres: {nres}')
     result, SVnum = som.run()
     p_values = result.pval
     adjusted_p_values = fdr(p_values)
@@ -525,6 +517,11 @@ def spatial_autocorrelation(adata,
     print(fdr_morans_ps.max(), fdr_morans_ps.min())
     print(type(fdr_morans_ps))
     print(f'fdr<0.05 gene nums: {fdr_morans_ps[fdr_morans_ps < 0.05].shape[0]}')
+
+    # save results
+    import json
+    # json.save(op)
+
 
     # gearys_cs = gearys_c_p_values(adata, weights, n_process=n_processes)
 
@@ -583,20 +580,22 @@ def hot(data):
 
 if __name__ == '__main__':
     adata = sc.read_h5ad('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h_pca.h5ad')
-    # adata = adata[:100, :500]
+    adata = adata[:100, :500]
     adata = preprocess(adata)
-    hs_results = hot(adata)
-    hs_genes = hs_results.index
-    print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
-    select_genes = hs_results.loc[hs_results.FDR < 0.05].index
-    print(f'select_genes: {len(select_genes)}')  # select_genes: 3181
-    sub_adata = adata[:, select_genes]
-
-    local_correlations = hs.compute_local_correlations(select_genes[:500], jobs=12)  # jobs for parallelization
-    print(local_correlations)
-
-
-    spatial_autocorrelation(sub_adata, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10,n_processes=None)
+    p_values, selected_genes = somde_p_values(adata, k=20, latent_obsm_key="spatial")
+    print(p_values)
+    print(f'gene num: {len(selected_genes)}')
+    # hs_results = hot(adata)
+    # hs_genes = hs_results.index
+    # print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
+    # select_genes = hs_results.loc[hs_results.FDR < 0.05].index
+    # print(f'select_genes: {len(select_genes)}')  # select_genes: 3181
+    # sub_adata = adata[:, select_genes]
+    #
+    # local_correlations = hs.compute_local_correlations(select_genes[:500], jobs=12)  # jobs for parallelization
+    # print(local_correlations)
+    #
+    # spatial_autocorrelation(sub_adata, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, n_processes=None)
 
     # from esda.getisord import G
     # from pysal.lib import weights
