@@ -19,15 +19,19 @@ from sklearn.neighbors import NearestNeighbors
 import multiprocessing
 
 
+def pseudo_data(num_cells=10, num_genes=5):
+    # Generate a non-zero gene expression matrix (cells x genes)
+    # Values are randomly chosen from 1 to 100
+    np.random.seed(0)  # For reproducibility
+    gene_expression_matrix = np.random.randint(1, 101, size=(num_cells, num_genes))
+    # Generate a non-zero 3D spatial coordinates matrix for cells
+    # Values are randomly chosen from 1 to 50
+    cell_coordinates = np.random.randint(1, 51, size=(num_cells, 3))
+    return gene_expression_matrix, cell_coordinates
+
+
+# ----------------- Spatial Auto-correlation -------------------
 def compute_weights(distances, neighborhood_factor=3):
-    """
-    Computes weights on the nearest neighbors based on a
-    gaussian kernel and their distances
-    Kernel width is set to the num_neighbors / neighborhood_factor's distance
-    distances:  cells x neighbors ndarray
-    neighborhood_factor: float
-    returns weights:  cells x neighbors ndarray
-    """
     radius_ii = ceil(distances.shape[1] / neighborhood_factor)
     sigma = distances[:, [radius_ii - 1]]
     sigma[sigma == 0] = 1
@@ -39,17 +43,6 @@ def compute_weights(distances, neighborhood_factor=3):
 
 
 def neighbors_and_weights(data, n_neighbors=30, neighborhood_factor=3, approx_neighbors=True):
-    """
-    Computes nearest neighbors and associated weights for data
-    Uses euclidean distance between rows of `data`
-    Parameters
-    ==========
-    data: pandas.Dataframe num_cells x num_features
-    Returns
-    =======
-    neighbors:      pandas.Dataframe num_cells x n_neighbors
-    weights:  pandas.Dataframe num_cells x n_neighbors
-    """
     coords = data.obsm['spatial']
     nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm="ball_tree").fit(coords)
     dist, ind = nbrs.kneighbors()
@@ -79,14 +72,6 @@ def flat_weights(cell_names, ind, weights, n_neighbors=30):
 
 
 def compute_sparse_spatial_weights(coords, k=5):
-    """
-    Compute the sparse spatial weights matrix using nearest neighbors approach for 3D coordinates.
-    Parameters:
-    coords (array-like): 2D array of 3D spatial coordinates.
-    k (int): Number of nearest neighbors to consider.
-    Returns:
-    csr_matrix: Sparse spatial weights matrix.
-    """
     from sklearn.neighbors import NearestNeighbors
     nbrs = NearestNeighbors(n_neighbors=k + 1, algorithm='ball_tree').fit(coords)
     distances, indices = nbrs.kneighbors(coords)
@@ -105,7 +90,9 @@ def compute_sparse_spatial_weights(coords, k=5):
     return spatial_weights
 
 
-# Spatial Auto-correlation Statics
+# -----------------------------------------------------#
+#                Getis Ord General G                   #
+# -----------------------------------------------------#
 def _getis_ord_general_g(x, w):
     x = np.asarray(x)
     w = np.asarray(w)
@@ -122,21 +109,6 @@ def _getis_ord_general_g(x, w):
         raise ValueError("Denominator is zero, which indicates all gene expression values are zero.")
     G = numerator / denominator
     return G
-
-
-def compute_g_for_gene(args):
-    gene_idx, gene_expression_matrix, spatial_weights = args
-    gene_expression = gene_expression_matrix[:, gene_idx]
-    G = _getis_ord_general_g(gene_expression, spatial_weights)
-    return G
-
-
-def getis_g_parallel(gene_expression_matrix, spatial_weights, n_processes=None):
-    n_genes = gene_expression_matrix.shape[1]
-    pool_args = [(gene_idx, gene_expression_matrix, spatial_weights) for gene_idx in range(n_genes)]
-    with multiprocessing.Pool(processes=n_processes) as pool:
-        G_values = pool.map(compute_g_for_gene, pool_args)
-    return np.array(G_values)
 
 
 def getis_g(adata, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10):
@@ -163,36 +135,25 @@ def getis_g(adata, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbor
     return G_values
 
 
-def pseudo_data(num_cells=10, num_genes=5):
-    # Generate a non-zero gene expression matrix (cells x genes)
-    # Values are randomly chosen from 1 to 100
-    np.random.seed(0)  # For reproducibility
-    gene_expression_matrix = np.random.randint(1, 101, size=(num_cells, num_genes))
-    # Generate a non-zero 3D spatial coordinates matrix for cells
-    # Values are randomly chosen from 1 to 50
-    cell_coordinates = np.random.randint(1, 51, size=(num_cells, 3))
-    return gene_expression_matrix, cell_coordinates
+# parallel computing
+def _compute_g_for_gene(args):
+    gene_idx, gene_expression_matrix, spatial_weights = args
+    gene_expression = gene_expression_matrix[:, gene_idx]
+    G = _getis_ord_general_g(gene_expression, spatial_weights)
+    return G
 
 
-# Compute p-values for spatial auto-correlation statics
-# def tests(adata, Hx: np.array, layer_key='raw_counts', latent_obsm_key="spatial", n_neighbors=10) -> np.array:
-#     """
-#     :param adata:
-#     :param Hx:
-#     :param layer_key:
-#     :param latent_obsm_key:
-#     :return:
-#     """
-#     # sc.pp.neighbors(adata, n_neighbors=n_neighbors)
-#     ind, neighbors, weights = neighbors_and_weights(cell_coordinates, n_neighbors=n_neighbors)
-#     adata.uns["neighbors"]["connectivities"] = weights
-#     pc_c_m = sc.metrics.morans_i(adata, layer=layer_key)  # shape: (n_gene, )
-#     pc_c_c = sc.metrics.gearys_c(adata, layer=layer_key)
-#     pc_c_g = getis_g(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
-#     p_values = np.array([pc_c_m, pc_c_c, pc_c_g, Hx])
-#     return p_values
+def getis_g_parallel(gene_expression_matrix, spatial_weights, n_processes=None):
+    n_genes = gene_expression_matrix.shape[1]
+    pool_args = [(gene_idx, gene_expression_matrix, spatial_weights) for gene_idx in range(n_genes)]
+    with multiprocessing.Pool(processes=n_processes) as pool:
+        G_values = pool.map(_compute_g_for_gene, pool_args)
+    return np.array(G_values)
 
 
+# -----------------------------------------------------#
+#                      Moran's I                       #
+# -----------------------------------------------------#
 def calculate_morans_i_p_value(moran_i, n_cells, weights):  # TODO: why use spatial weights here?
     # Calculate the expected value of Moran's I
     E_I = -1 / (n_cells - 1)
@@ -213,6 +174,9 @@ def calculate_morans_i_p_value(moran_i, n_cells, weights):  # TODO: why use spat
     return p_value
 
 
+# -----------------------------------------------------#
+#                      Greay's C                       #
+# -----------------------------------------------------#
 def gearys_c_variance(x, w):
     n = len(x)
     W = np.sum(w)
@@ -237,72 +201,34 @@ def gearys_c_p_value(C, var_C, tail='right'):
     return p_value
 
 
-# def fdr(pvalues, alpha=0.05):
-#     """
-#     Calculate the p-value cut-off to control for
-#     the false discovery rate (FDR) for multiple testing.
-#     If by controlling for FDR, all of n null hypotheses
-#     are rejected, the conservative Bonferroni bound (alpha/n)
-#     is returned instead.
-#     Parameters
-#     ----------
-#     pvalues     : array
-#                   (n, ), p values for n multiple tests.
-#     alpha       : float, optional
-#                   Significance level. Default is 0.05.
-#     Returns
-#     -------
-#                 : float
-#                   Adjusted criterion for rejecting the null hypothesis.
-#                   If by controlling for FDR, all of n null hypotheses
-#                   are rejected, the conservative Bonferroni bound (alpha/n)
-#                   is returned.
-#     Notes
-#     -----
-#     For technical details see :cite:`Benjamini:2001` and
-#     :cite:`Castro:2006tz`.
-#     """
-#     n = len(pvalues)
-#     p_sort = np.sort(pvalues)[::-1]
-#     index = np.arange(n, 0, -1)
-#     p_fdr = index * alpha / n
-#     search = p_sort < p_fdr
-#     sig_all = np.where(search)[0]
-#     if len(sig_all) == 0:
-#         return alpha / n
-#     else:
-#         return p_fdr[sig_all[0]]
+# -----------------------------------------------------#
+#                      Greay's C                       #
+# -----------------------------------------------------#
+def _calculate_s(w):
+    n = w.shape[0]
+    s0 = np.sum(w)
+    s1 = 0.5 * np.sum([
+        (w[i, j] + w[j, i]) ** 2
+        for i in range(n)
+        for j in range(n)
+    ])
+    s2 = nnp.sum([
+        (np.sum(w[i, :]) + np.sum(w[:, i])) ** 2
+        for i in range(n)
+    ])
+    return s0, s1, s2
 
 
-# Combine p-values
+# -----------------------------------------------------#
+#                 Combine p-values                     #
+# -----------------------------------------------------#
 def fishers_method(p_values: np.array) -> np.array:
-    """
-    Combines p-values using Fisher's Combined Probability Test.
-    Fisher's method combines multiple p-values into a single p-value
-    by summing the negative natural logarithms of the individual p-values
-    and using a chi-squared distribution.
-    :param p_values: A 2D NumPy array where each row represents a set of p-values
-        to be combined. Shape should be (m, n), where m is the number
-        of tests and n is the number of p-values per test.
-    :return: A 1D array of combined p-values for each test, with length m.
-    """
     chi2_stat = -2 * np.sum(np.log(p_values), axis=0)
     p_combined = chi2.sf(chi2_stat, 2 * p_values.shape[0])
     return p_combined
 
 
 def stouffers_method(p_values: np.array) -> np.array:
-    """
-    Combines p-values using Stouffer's Z-score Method.
-    Stouffer's method combines multiple p-values into a single p-value
-    by converting each p-value to a z-score, summing the z-scores,
-    and then converting the sum back to a p-value using the standard
-    normal distribution.
-    :param p_values: A 2D NumPy array where each row represents a set of p-values
-        to be combined. Shape should be (m, n), where m is the number
-        of tests and n is the number of p-values per test.
-    :return:
-    """
     z_scores = norm.ppf(1 - p_values)
     combined_z = np.sum(z_scores, axis=0) / np.sqrt(p_values.shape[0])
     p_combined = norm.sf(combined_z)
@@ -310,9 +236,6 @@ def stouffers_method(p_values: np.array) -> np.array:
 
 
 def combine(p_values: np.array, method: str) -> np.array:
-    """
-    Combine p-values
-    """
     if method not in ['fisher', 'stouffer']:
         print()
     global combined_p_values
@@ -323,6 +246,11 @@ def combine(p_values: np.array, method: str) -> np.array:
         combined_p_values = stouffers_method(p_values)
         print("Stouffer's combined p-values:", combined_p_values)
     return combined_p_values
+
+
+def combined2(pvalues: np.array):
+    from scipy.stats import combine_pvalues
+    np.apply_along_axis(combine_pvalues, 1, pvalues)
 
 
 # Main Function
@@ -337,6 +265,7 @@ def get_combined_p_values(adata,
     return combined_p_values
 
 
+# --------------------- CO-EXPRESSION --------------------------
 # in case sparse X in h5ad
 def format_gene_array(gene_array):
     if scipy.sparse.issparse(gene_array):
@@ -344,12 +273,9 @@ def format_gene_array(gene_array):
     return gene_array.reshape(-1)
 
 
-# @params:
-#       adata:  input adata, will use the X matrix, obs and var dataframe
-#       weight: sparse weight in dataframe with 'Cell_x', 'Cell_y' and 'Weight'
-#       gene_x:
-#       gene_y:
-#
+# -----------------------------------------------------#
+#               Bivariate Moran's I                    #
+# -----------------------------------------------------#
 def global_bivariate_morans_R(adata, weights, gene_x, gene_y):
     # 1 gene name to matrix id
     gene_x_id = adata.var.index.get_loc(gene_x)
@@ -375,12 +301,9 @@ def global_bivariate_morans_R(adata, weights, gene_x, gene_y):
     return numerator / denominator
 
 
-# @params:
-#       adata:  input adata, will use the X matrix, obs and var dataframe
-#       weight: sparse weight in dataframe with 'Cell_x', 'Cell_y' and 'Weight'
-#       gene_x:
-#       gene_y:
-#
+# -----------------------------------------------------#
+#               Bivariate Greay's C                    #4
+# -----------------------------------------------------#
 def global_bivariate_gearys_C(adata, weights, gene_x, gene_y):
     # 1 gene name to matrix id
     gene_x_id = adata.var.index.get_loc(gene_x)
