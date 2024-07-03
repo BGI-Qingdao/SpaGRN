@@ -14,6 +14,9 @@ from scipy import stats
 from scipy.spatial.distance import pdist, squareform
 from scipy.sparse import csr_matrix, issparse
 
+from esda.getisord import G
+from pysal.lib import weights
+
 import multiprocessing
 
 
@@ -131,18 +134,6 @@ def cal_s0(w):
     return s0
 
 
-# def cal_s1(w, n):
-#     """
-#     s1=1/2 \sum_i \sum_j \Big(w_{i,j} + w_{j,i}\Big)^2
-#     """
-#     s1 = 0.5 * np.sum([
-#         (w[i, j] + w[j, i]) ** 2
-#         for i in range(n)
-#         for j in range(n)
-#     ])
-#     return s1
-
-
 def cal_s1(w):
     """
     s1 = 1/2 * sum_i sum_j (w_ij + w_ji)^2
@@ -152,17 +143,6 @@ def cal_s1(w):
     # 计算 s1
     s1 = 0.5 * np.sum(w_sum ** 2)
     return s1
-
-
-# def cal_s2(w, n):
-#     """
-#     s2=\sum_j \Big(\sum_i w_{i,j} + \sum_i w_{j,i}\Big)^2
-#     """
-#     s2 = np.sum([
-#         (np.sum(w[i, :]) + np.sum(w[:, i])) ** 2
-#         for i in range(n)
-#     ])
-#     return s2
 
 
 def cal_s2(w):
@@ -197,26 +177,27 @@ def cal_k(adata, gene_x_id, n):
 # -----------------------------------------------------#
 # Getis Ord General G
 # -----------------------------------------------------#
-def getis_g(x, w):
+def _getis_g(x, w):
     """
     Calculate getis ord general g for one gene
     :param x:
     :param w:
     :return:
     """
-    x = np.asarray(x)
-    w = np.asarray(w)
-
+    # x = np.asarray(x)
+    # w = np.asarray(w)
     numerator = np.sum(np.sum(w * np.outer(x, x)))
-    denominator = np.sum(x ** 2)
-    # Check for zero denominator
-    if denominator == 0:
-        raise ValueError("Denominator is zero, which indicates all gene expression values are zero.")
+    # denominator = np.sum(x ** 2)
+    denominator = np.sum(np.outer(x, x))
     G = numerator / denominator
     return G
 
 
-def getis_g_p_value_one_gene(G, w, x):
+def lag(w, y):
+    return w.sparse * y
+
+
+def _getis_g_p_value_one_gene(G, w, x):
     n = w.shape[0]
     s0 = cal_s0(w)
     s02 = s0 * s0
@@ -236,26 +217,43 @@ def getis_g_p_value_one_gene(G, w, x):
 
     Z = (G - EG) / np.sqrt(VG)
     p_value = 1 - norm.cdf(Z)
+    print(f'G: {G}\nVG: {VG}\nZ: {Z}\np_value: {p_value}')
     return p_value
 
 
+def getis_g_p_values_one_gene(adata, gene_x_id, ind, weights_n):
+    nind = pd.DataFrame(data=ind)
+    nei = nind.transpose().to_dict('list')
+    w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
+    w = weights.W(nei, weights=w_dict)
+    gene_expression_matrix = adata.layers['raw_counts']
+    g = G(gene_expression_matrix[:, gene_x_id], w)
+    return g.p_norm
+
+
 # parallel computing
+# def _compute_g_for_gene(args):
+#     w, x = args
+#     G = getis_g(x, w)
+#     Gp = getis_g_p_value_one_gene(G, w, x)
+#     return Gp
 def _compute_g_for_gene(args):
-    G, w, x = args
-    Gp = getis_g_p_value_one_gene(G, w, x)
+    adata, gene_x_id, ind, weights_n = args
+    Gp = getis_g_p_values_one_gene(adata, gene_x_id, ind, weights_n)
+    print(f'gene{gene_x_id}: p_value: {Gp}')
     return Gp
 
 
-def _getis_g_parallel(gene_expression_matrix, n_processes=None):
-    n_genes = gene_expression_matrix.shape[1]
-    pool_args = [(G, w, gene_expression_matrix[:, gene_x_id]) for gene_x_id in range(n_genes)]
+def _getis_g_parallel(adata, ind, weights_n, n_genes, n_processes=None):
+    pool_args = [(adata, gene_x_id, ind, weights_n) for gene_x_id in range(n_genes)]
     with multiprocessing.Pool(processes=n_processes) as pool:
         Gp_values = pool.map(_compute_g_for_gene, pool_args)
     return np.array(Gp_values)
 
 
 def getis_g_p_values(adata: ad.AnnData,
-                     weights,
+                     ind,
+                     weights_n,
                      layer_key: str = 'raw_counts',
                      n_processes=None):
     """
@@ -269,14 +267,16 @@ def getis_g_p_values(adata: ad.AnnData,
         gene_expression_matrix = adata.layers[layer_key]
     else:
         gene_expression_matrix = adata.X
+    n_genes = len(adata.var_names)
     if n_processes:
-        pass
+        p_values = _getis_g_parallel(adata, ind, weights_n, n_genes, n_processes=n_processes)
     else:
         p_values = []
         for gene_x_id, gene_name in enumerate(adata.var_names):
-            x = gene_expression_matrix[:, gene_x_id]
-            G = getis_g(x, weights)
-            p_value = getis_g_p_value_one_gene(G, w, x)
+            # x = gene_expression_matrix[:, gene_x_id]
+            # G = getis_g(x, weights)
+            # p_value = getis_g_p_value_one_gene(G, w, x)
+            p_value = getis_g_p_value_one_gene(adata, gene_x_id, ind, weights_n)
             p_values.append(p_value)
         p_values = np.array(p_values)
     return p_values
@@ -297,8 +297,6 @@ def _morans_i(adata, weights, layer_key='raw_counts'):
         adata.obsp['connectivities'] = weights
     morans_i_array = sc.metrics.morans_i(adata, layer=layer_key)
     # shape: (n_genes, )
-    print(morans_i_array.shape)
-    print(morans_i_array.max(), morans_i_array.min())
     return morans_i_array
 
 
@@ -321,10 +319,7 @@ def _morans_i_p_value_one_gene(adata, gene_x_id, weights, morans_i_array):
     :param morans_i_array:
     :return:
     """
-    # gene_x_id = adata.var.index.get_loc(gene_name)
     I = morans_i_array[gene_x_id]  # moran's I stats for the gene
-    # I = cal_I(adata, gene_x_id, weights)
-
     n = len(adata.obs_names)  # number of cells
     EI = -1 / (n - 1)  # Moran’s I expected value
     K = cal_k(adata, gene_x_id, n)
@@ -333,35 +328,14 @@ def _morans_i_p_value_one_gene(adata, gene_x_id, weights, morans_i_array):
     S2 = cal_s2(weights)
     # Variance
     part1 = (n * (S1 * (n ** 2 - 3 * n + 3) - n * S2 + 3 * np.square(S0))) / (
-                (n - 1) * (n - 2) * (n - 3) * np.square(S0))
+            (n - 1) * (n - 2) * (n - 3) * np.square(S0))
     part2 = (K * (S1 * (n ** 2 - n) - 2 * n * S2 + 6 * np.square(S0))) / ((n - 1) * (n - 2) * (n - 3) * np.square(S0))
     VI = part1 - part2 - np.square(EI)
-
-    # n2 = n * n
-    # S02 = S0 * S0
-    # v_num = n2 * S1 - n * S2 + 3 * S02
-    # v_den = (n - 1) * (n + 1) * S02
-    # VI_norm = v_num / v_den - (1.0 / (n - 1)) ** 2
-    #
-    # seI_norm = VI_norm ** (1 / 2.0)
-    # z_norm = (I - EI) / seI_norm
-    # p_norm = stats.norm.sf(z_norm)
-
     stdI = np.sqrt(VI)
     # Z score
     Z = (I - EI) / stdI
     # Perform one-tail test one z score
     p_value = 1 - norm.cdf(Z)  # right tail
-    # fdr_p_value = fdr(p_value)
-
-    if gene_x_id < 10:
-        print(f'gene_x_id: {gene_x_id}')
-        print(morans_i_array[gene_x_id])
-        print(f'I: {I}')
-        print(f'VI_norm: {VI_norm}')
-        print(f'VI: {VI}')
-        print(f'p_norm: {p_norm}')
-        print(f'EI: {EI}, VI: {VI}, p_value: {p_value}')
     return p_value
 
 
@@ -415,7 +389,6 @@ def _gearys_c(adata, weights, layer_key='raw_counts'):
 
 
 def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
-    # gene_x_id = adata.var.index.get_loc(gene_name)
     C = gearys_c_array[gene_x_id]
 
     n = len(adata.obs_names)
@@ -428,9 +401,13 @@ def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
     part2 = (n ** 2 - 3 - K * np.square(n - 1)) / (n * (n - 2) * (n - 3))
     part3 = (n - 1) * S2 * (n ** 2 + 3 * n - 6 - K * (n ** 2 - n + 2)) / (4 * n * (n - 2) * (n - 3) * np.square(S0))
     VC = part1 + part2 - part3
+    # variance = (2 * (n ** 2) * S1 - n * S2 + 3 * (S0 ** 2)) / (S0 ** 2 * (n - 1) * (n - 2) * (n - 3))
 
-    Z = (C - EC) / np.sqrt(VC)
+    VC_norm = (1 / (2 * (n + 1) * S0 ** 2)) * ((2 * S1 + S2) * (n - 1) - 4 * S0 ** 2)
+
+    Z = (C - EC) / np.sqrt(VC_norm)
     p_value = 1 - norm.cdf(Z)
+    print(f'C: {C}\nVC: {VC}\nVC_norm: {VC_norm}\nZ: {Z}\np_value: {p_value}')
     return p_value
 
 
@@ -456,6 +433,7 @@ def gearys_c_p_values(adata, weights, layer_key='raw_counts', n_process=None):
     else:
         p_values = []
         for gene_x_id, gene_name in enumerate(adata.var_names):
+            print(gene_x_id)
             p = _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array)
             p_values.append(p)
         p_values = np.array(p_values)
@@ -496,6 +474,37 @@ def somde_p_values(adata, k=20, latent_obsm_key="spatial"):
 # -----------------------------------------------------#
 # Main
 # -----------------------------------------------------#
+def save_array(array, fn='array.json'):
+    import json
+    from json import JSONEncoder
+    class NumpyEncoder(json.JSONEncoder):
+        """ Special json encoder for numpy types """
+
+        def default(self, obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return json.JSONEncoder.default(self, obj)
+
+    encodedNumpyData = json.dumps(array, cls=NumpyEncoder)  # use dump() to write array into file
+    with open(fn, 'w', encoding='utf-8') as f:
+        json.dump(encodedNumpyData, f)
+
+
+def save_list(l, fn='list.txt'):
+    with open(fn, 'w') as f:
+        f.write('\n'.join(l))
+
+
+def read_list(fn):
+    with open(fn, 'r') as f:
+        l = f.read().splitlines()
+    return l
+
+
 def spatial_autocorrelation(adata,
                             layer_key="raw_counts",
                             latent_obsm_key="spatial",
@@ -507,26 +516,45 @@ def spatial_autocorrelation(adata,
     sw = square_weights(fw)
     weights = csr_matrix(sw)
 
-    morans_ps = morans_i_p_values(adata, weights, layer_key=layer_key, n_process=n_processes)
-    print(f'morans_ps: {morans_ps}')
-    print(morans_ps.max(), morans_ps.min())
-    print(type(morans_ps))
-    print(f'p<0.05 gene nums: {morans_ps[morans_ps < 0.05].shape[0]}')
-    fdr_morans_ps = fdr(morans_ps)
-    print(f'fdr_morans_ps: {fdr_morans_ps}')
-    print(fdr_morans_ps.max(), fdr_morans_ps.min())
-    print(type(fdr_morans_ps))
-    print(f'fdr<0.05 gene nums: {fdr_morans_ps[fdr_morans_ps < 0.05].shape[0]}')
-
-    # save results
-    import json
-    # json.save(op)
-
+    # morans_ps = morans_i_p_values(adata, weights, layer_key=layer_key, n_process=n_processes)
+    # print(f'morans_ps: {morans_ps}')
+    # print(morans_ps.max(), morans_ps.min())
+    # print(type(morans_ps))
+    # print(f'p<0.05 gene nums: {morans_ps[morans_ps < 0.05].shape[0]}')
+    # save_array(morans_ps, fn='morans_ps.json')
+    # fdr_morans_ps = fdr(morans_ps)
+    # print(f'fdr_morans_ps: {fdr_morans_ps}')
+    # print(fdr_morans_ps.max(), fdr_morans_ps.min())
+    # print(type(fdr_morans_ps))
+    # print(f'fdr<0.05 gene nums: {fdr_morans_ps[fdr_morans_ps < 0.05].shape[0]}')
+    # save_array(fdr_morans_ps, fn='fdr_morans_ps.json')
 
     # gearys_cs = gearys_c_p_values(adata, weights, n_process=n_processes)
+    # print(f'gearys_cs: {gearys_cs}')
+    # print(gearys_cs.max(), gearys_cs.min())
+    # print(type(gearys_cs))
+    # print(f'p<0.05 gene nums: {gearys_cs[gearys_cs < 0.05].shape[0]}')
+    # # save_array(gearys_cs, fn='gearys_cs.json')
+    # fdr_gearys_cs = fdr(gearys_cs)
+    # print(f'fdr_gearys_cs: {fdr_gearys_cs}')
+    # print(fdr_gearys_cs.max(), fdr_gearys_cs.min())
+    # print(type(fdr_gearys_cs))
+    # print(f'fdr<0.05 gene nums: {fdr_gearys_cs[fdr_gearys_cs < 0.05].shape[0]}')
+    # # save_array(fdr_gearys_cs, fn='fdr_gearys_cs.json')
 
-    # getis_gs = getis_g_p_values(adata, weights, layer_key=layer_key, n_processes=n_processes)
-    #
+    getis_gs = getis_g_p_values(adata, ind, weights_n, layer_key=layer_key, n_processes=n_processes)
+    print(f'getis_gs: {getis_gs}')
+    print(getis_gs.max(), getis_gs.min())
+    print(type(getis_gs))
+    print(f'p<0.05 gene nums: {getis_gs[getis_gs < 0.05].shape[0]}')
+    save_array(getis_gs, fn='getis_gs.json')
+    fdr_getis_gs = fdr(getis_gs)
+    print(f'fdr_getis_gs: {fdr_getis_gs}')
+    print(fdr_getis_gs.max(), fdr_getis_gs.min())
+    print(type(fdr_getis_gs))
+    print(f'fdr<0.05 gene nums: {fdr_getis_gs[fdr_getis_gs < 0.05].shape[0]}')
+    save_array(fdr_getis_gs, fn='fdr_getis_gs.json')
+
     # more_stats = pd.DataFrame({
     #     'C': gearys_cs,
     #     'I': morans_is,
@@ -536,10 +564,9 @@ def spatial_autocorrelation(adata,
 
 
 def combind_fdrs(more_stats, Hx, method='fisher'):
+    """method options are {}"""
     from scipy.stats import combine_pvalues
     more_stats['Hx'] = Hx
-    # p_values_array = more_stats.to_numpy()
-    # combined = combine_pvalues(more_stats.to_numpy(), method=method)
     combined = np.apply_along_axis(combine_pvalues, 1, df, method=method)[:, 1]
     return combined
 
@@ -558,7 +585,6 @@ def preprocess(adata: ad.AnnData, min_genes=0, min_cells=3, min_counts=1, max_ge
     sc.pp.ﬁlter_cells(adata, min_genes=0)
     # add the total counts per cell as observations-annotation to adata
     adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
-
     # ﬁltering with basic thresholds for genes and cells
     sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
     sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
@@ -580,27 +606,40 @@ def hot(data):
 
 if __name__ == '__main__':
     adata = sc.read_h5ad('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h_pca.h5ad')
-    adata = adata[:100, :500]
     adata = preprocess(adata)
-    p_values, selected_genes = somde_p_values(adata, k=20, latent_obsm_key="spatial")
-    print(p_values)
-    print(f'gene num: {len(selected_genes)}')
+
+    # ----TEST SOMDE
+    # p_values, selected_genes = somde_p_values(adata, k=20, latent_obsm_key="spatial")
+    # print(p_values)
+    # print(f'gene num: {len(selected_genes)}')
+
+    # ---- HOTSPOT autocorrelation
     # hs_results = hot(adata)
     # hs_genes = hs_results.index
     # print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
     # select_genes = hs_results.loc[hs_results.FDR < 0.05].index
     # print(f'select_genes: {len(select_genes)}')  # select_genes: 3181
+    # save_list(list(select_genes), 'hotspot_select_genes.txt')
+
+    # select_genes = read_list('hotspot_select_genes.txt')
     # sub_adata = adata[:, select_genes]
-    #
+
+    # ---- HOTSPOT co-expression
     # local_correlations = hs.compute_local_correlations(select_genes[:500], jobs=12)  # jobs for parallelization
     # print(local_correlations)
-    #
-    # spatial_autocorrelation(sub_adata, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, n_processes=None)
 
+    # ---- TESTS
+    spatial_autocorrelation(adata, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, n_processes=10)
+
+    # ----
     # from esda.getisord import G
     # from pysal.lib import weights
     # k = 10
     # ind, neighbors, weights_mtx = neighbors_and_weights(adata, n_neighbors=k)
-    # gene_expression = adata.layers['raw_counts']
-    # g = G(gene_expression[0, :], w)
-    # print(g)
+    # nind = pd.DataFrame(data=ind)
+    # nei = nind.transpose().to_dict('list')
+    # w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
+    # w = weights.W(nei, weights=w_dict)
+    # gene_expression_matrix = adata.layers['raw_counts']
+    # g = G(gene_expression_matrix[:, 0], w)
+    # print(g.G)
