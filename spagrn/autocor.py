@@ -3,6 +3,9 @@
 # @Date: Created on 30 Jun 2024 13:39
 # @Author: Yao LI
 # @File: SpaGRN/autocor.py
+import os
+import time
+
 import scanpy as sc
 import numpy as np
 import pandas as pd
@@ -20,6 +23,25 @@ from esda.geary import Geary
 from pysal.lib import weights
 
 import multiprocessing
+from memory_profiler import profile, memory_usage
+
+
+def memory_time_decorator(func):
+    import time
+    from memory_profiler import memory_usage
+    def wrapper(*args, **kwargs):
+        # Record start time
+        start_time = time.time()
+        # Measure memory usage
+        mem_usage = memory_usage((func, args, kwargs), max_usage=True)
+        # Record end time
+        end_time = time.time()
+        # Calculate total time taken
+        total_time = end_time - start_time
+        print(f"Maximum memory usage: {mem_usage[0]:.2f} MiB")
+        print(f"Total time taken: {total_time:.4f} seconds")
+        return func(*args, **kwargs)
+    return wrapper
 
 
 class AutocorStats:
@@ -629,7 +651,8 @@ def spatial_autocorrelation(adata,
                             layer_key="raw_counts",
                             latent_obsm_key="spatial",
                             n_neighbors=10,
-                            n_processes=None):
+                            n_processes=None,
+                            output='.'):
     ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key, n_neighbors=n_neighbors)
     # cell_names = adata.obs_names
     # fw = flat_weights(cell_names, ind, weights_n, n_neighbors=n_neighbors)
@@ -641,39 +664,39 @@ def spatial_autocorrelation(adata,
     # print(morans_ps.max(), morans_ps.min())
     # print(type(morans_ps))
     # print(f'p<0.05 gene nums: {morans_ps[morans_ps < 0.05].shape[0]}')
-    # np.savetxt('morans_ps.txt', morans_ps)
+    np.savetxt(os.path.join(output, 'morans_ps.txt'), morans_ps)
     fdr_morans_ps = fdr(morans_ps)
     # print(f'fdr_morans_ps: {fdr_morans_ps}')
     # print(fdr_morans_ps.max(), fdr_morans_ps.min())
     # print(type(fdr_morans_ps))
     # print(f'fdr<0.05 gene nums: {fdr_morans_ps[fdr_morans_ps < 0.05].shape[0]}')
-    # np.savetxt('fdr_morans_ps.txt', fdr_morans_ps)
+    np.savetxt(os.path.join(output, 'fdr_morans_ps.txt'), fdr_morans_ps)
 
     gearys_cs = gearys_c_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
     # print(f'gearys_cs: {gearys_cs}')
     # print(gearys_cs.max(), gearys_cs.min())
     # print(type(gearys_cs))
     # print(f'p<0.05 gene nums: {gearys_cs[gearys_cs < 0.05].shape[0]}')
-    # np.savetxt('gearys_cs.txt', gearys_cs)
+    np.savetxt(os.path.join(output, 'gearys_cs.txt'), gearys_cs)
     fdr_gearys_cs = fdr(gearys_cs)
     # print(f'fdr_gearys_cs: {fdr_gearys_cs}')
     # print(fdr_gearys_cs.max(), fdr_gearys_cs.min())
     # print(type(fdr_gearys_cs))
     # print(f'fdr<0.05 gene nums: {fdr_gearys_cs[fdr_gearys_cs < 0.05].shape[0]}')
-    # np.savetxt('fdr_gearys_cs.txt', fdr_gearys_cs)
+    np.savetxt(os.path.join(output, 'fdr_gearys_cs.txt'), fdr_gearys_cs)
 
     getis_gs = getis_g_p_values(adata, ind, weights_n, layer_key=layer_key, n_processes=n_processes)
     # print(f'getis_gs: {getis_gs}')
     # print(getis_gs.max(), getis_gs.min())
     # print(type(getis_gs))
     # print(f'p<0.05 gene nums: {getis_gs[getis_gs < 0.05].shape[0]}')
-    # np.savetxt('getis_gs.txt', getis_gs)
+    np.savetxt(os.path.join(output, 'getis_gs.txt'), getis_gs)
     fdr_getis_gs = fdr(getis_gs)
     # print(f'fdr_getis_gs: {fdr_getis_gs}')
     # print(fdr_getis_gs.max(), fdr_getis_gs.min())
     # print(type(fdr_getis_gs))
     # print(f'fdr<0.05 gene nums: {fdr_getis_gs[fdr_getis_gs < 0.05].shape[0]}')
-    # np.savetxt('fdr_getis_gs.txt', fdr_getis_gs)
+    np.savetxt(os.path.join(output, 'fdr_getis_gs.txt'), fdr_getis_gs)
 
     # morans_ps = np.loadtxt('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/morans_ps.txt')
     # fdr_morans_ps = np.loadtxt('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/fdr_morans_ps.txt')
@@ -733,8 +756,152 @@ def hot(data):
     return hs, hs_results
 
 
+# -----------------------------------------------------#
+#               Bivariate Moran's I                    #
+# -----------------------------------------------------#
+def global_bivariate_moran_R_two_genes(adata, weights, gene_x, gene_y):
+    # 1 gene name to matrix id
+    gene_x_id = adata.var.index.get_loc(gene_x)
+    gene_y_id = adata.var.index.get_loc(gene_y)
+    # 2 cell name to matrix id
+    tmp_obs = adata.obs.copy()
+    tmp_obs['id'] = np.arange(len(adata.obs))
+    cell_x_id = tmp_obs.loc[weights['Cell_x'].to_list()]['id'].to_numpy()
+    cell_y_id = tmp_obs.loc[weights['Cell_y'].to_list()]['id'].to_numpy()
+    # 3 get average
+    gene_x_exp_mean = adata.X[:, gene_x_id].mean()
+    gene_y_exp_mean = adata.X[:, gene_y_id].mean()
+    # 4 calculate denominator
+    gene_x_exp = format_gene_array(adata.X[:, gene_x_id])
+    gene_y_exp = format_gene_array(adata.X[:, gene_y_id])
+    denominator = np.sqrt(np.square(gene_x_exp - gene_x_exp_mean).sum()) * \
+                  np.sqrt(np.square(gene_y_exp - gene_y_exp_mean).sum())
+    # 5 calulate numerator
+    gene_x_in_cell_x = format_gene_array(adata.X[cell_x_id, gene_x_id])
+    gene_y_in_cell_y = format_gene_array(adata.X[cell_y_id, gene_y_id])
+    wij = weights['Weight'].to_numpy()
+    numerator = np.sum(wij * (gene_x_in_cell_x - gene_x_exp_mean) * (gene_y_in_cell_y - gene_y_exp_mean))
+    return numerator / denominator
+
+
+def global_bivariate_moran_R(adata, weights, selected_genes):
+    n_genes = len(selected_genes)
+    result_matrix = np.zeros((n_genes, n_genes))
+    for i in range(n_genes):
+        for j in range(i+1, n_genes):
+            result_matrix[i, j] = global_bivariate_moran_R_two_genes(adata, weights, selected_genes[i], selected_genes[j])
+            result_matrix[j, i] = result_matrix[i, j]
+    df = pd.DataFrame(data=result_matrix, index=selected_genes, columns=selected_genes)
+    return df
+
+
+# -----------------------------------------------------#
+#               Bivariate Greay's C                    #
+# -----------------------------------------------------#
+def global_bivariate_gearys_C_two_genes(adata, weights, gene_x, gene_y):
+    # 1 gene name to matrix id
+    gene_x_id = adata.var.index.get_loc(gene_x)
+    gene_y_id = adata.var.index.get_loc(gene_y)
+    # 2 cell name to matrix id
+    tmp_obs = adata.obs.copy()
+    tmp_obs['id'] = np.arange(len(adata.obs))
+    cell_x_id = tmp_obs.loc[weights['Cell_x'].to_list()]['id'].to_numpy()
+    cell_y_id = tmp_obs.loc[weights['Cell_y'].to_list()]['id'].to_numpy()
+    # 3 get average
+    gene_x_exp_mean = adata.X[:, gene_x_id].mean()
+    gene_y_exp_mean = adata.X[:, gene_y_id].mean()
+    # 4 calculate denominator
+    gene_x_exp = format_gene_array(adata.X[:, gene_x_id])
+    gene_y_exp = format_gene_array(adata.X[:, gene_y_id])
+    denominator = np.sqrt(np.square(gene_x_exp - gene_x_exp_mean).sum()) * \
+                  np.sqrt(np.square(gene_y_exp - gene_y_exp_mean).sum())
+    # 5 calulate numerator
+    gene_x_in_cell_x = format_gene_array(adata.X[cell_x_id, gene_x_id])
+    gene_x_in_cell_y = format_gene_array(adata.X[cell_y_id, gene_x_id])
+    gene_y_in_cell_x = format_gene_array(adata.X[cell_x_id, gene_y_id])
+    gene_y_in_cell_y = format_gene_array(adata.X[cell_y_id, gene_y_id])
+    wij = weights['Weight'].to_numpy()
+    numerator = np.sum(wij * (gene_x_in_cell_x - gene_y_in_cell_x) * (gene_y_in_cell_y - gene_x_in_cell_y))
+    return numerator / denominator
+
+
+# def compute_pair(i, j, adata, weights, selected_genes):
+#     gene1 = selected_genes[i]
+#     gene2 = selected_genes[j]
+#     result = global_bivariate_gearys_C_two_genes(adata, weights, gene1, gene2)
+#     return i, j, result
+def compute_pair(args):
+    i, j, adata, weights, selected_genes = args
+    # Log process information to confirm parallel execution
+    process_id = os.getpid()
+    print(f"Computing pair ({i}, {j}) in process ID {process_id}")
+    gene1 = selected_genes[i]
+    gene2 = selected_genes[j]
+    value = global_bivariate_gearys_C_two_genes(adata, weights, gene1, gene2)
+    return i, j, value
+
+
+# def run_in_parallel(adata, weights, selected_genes, n_genes, num_workers):
+#     from concurrent.futures import ProcessPoolExecutor
+#     result_matrix = np.zeros((n_genes, n_genes))
+#     with ProcessPoolExecutor(max_workers=num_workers) as executor:
+#         futures = []
+#         for i in range(n_genes):
+#             for j in range(i + 1, n_genes):
+#                 futures.append(executor.submit(compute_pair, i, j, adata, weights, selected_genes))
+#         for future in as_completed(futures):
+#             try:
+#                 i, j, result = future.result()
+#                 result_matrix[i, j] = result
+#                 result_matrix[j, i] = result
+#             except Exception as e:
+#                 print(f"Error computing pair ({i}, {j}): {e}")
+#     return result_matrix
+def run_in_parallel(adata, weights, selected_genes, n_genes, num_workers):
+    print('Starting function run_in_parallel...')
+    result_matrix = np.zeros((n_genes, n_genes))
+    print(f'result_matrix: {result_matrix}')
+    pool = multiprocessing.Pool(processes=num_workers)
+    print(f'pool: {pool}')
+    tasks = [(i, j, adata, weights, selected_genes) for i in range(n_genes) for j in range(i + 1, n_genes)]
+    print(f'tasks: {tasks}')
+    for result in pool.imap_unordered(compute_pair, tasks):
+        i, j, value = result
+        result_matrix[i, j] = value
+        result_matrix[j, i] = value
+    pool.close()
+    pool.join()
+    return result_matrix
+
+
+# def global_bivariate_gearys_C(adata, weights, selected_genes, num_workers):
+#     n_genes = len(selected_genes)
+#     # Measure memory usage
+#     # mem_usage = memory_usage((run_in_parallel, (adata, weights, selected_genes, n_genes, num_workers)))
+#     # print(f"Maximum memory usage: {mem_usage[0]:.2f} MiB")
+#     result_matrix = run_in_parallel(adata, weights, selected_genes, n_genes, num_workers)
+#     df = pd.DataFrame(data=result_matrix, index=selected_genes, columns=selected_genes)
+#     return df
+
+def global_bivariate_gearys_C(adata, weights, selected_genes, num_workers=4):
+    n_genes = len(selected_genes)
+    print(f'n_genes: {n_genes}')
+    start_time = time.time()
+    print(f'start_time: {start_time}')
+    result_matrix = run_in_parallel(adata, weights, selected_genes, n_genes, num_workers)
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"Total time taken: {total_time:.4f} seconds")
+    df = pd.DataFrame(data=result_matrix, index=selected_genes, columns=selected_genes)
+    return df
+
+
 if __name__ == '__main__':
+    print('Loading experimental data...')
     adata = sc.read_h5ad('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h_pca.h5ad')
+    # fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E16-18h_pca.h5ad'
+    # adata = sc.read_h5ad(fn)
+    adata = adata[:100,:150]
     adata = preprocess(adata)
 
     # ----TEST SOMDE
@@ -743,14 +910,16 @@ if __name__ == '__main__':
     # print(f'gene num: {len(selected_genes)}')
 
     # ---- HOTSPOT autocorrelation
-    # hs, hs_results = hot(adata)
+    print('HOTSPOT autocorrelation computing...')
+    hs, hs_results = hot(adata)
     # hs_genes = hs_results.index
     # print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
-    # select_genes = hs_results.loc[hs_results.FDR < 0.05].index
-    # print(f'select_genes: {len(select_genes)}')  # select_genes: 3181 / 3188
+    print('Selecting gene which FDR is lower than 0.05')
+    select_genes = hs_results.loc[hs_results.FDR < 0.05].index
+    print(f'select_genes: {len(select_genes)}')  # select_genes: 3181 / 3188
     # save_list(list(select_genes), 'hotspot_select_genes.txt')
 
-    select_genes = read_list('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/hotspot_select_genes.txt')
+    # select_genes = read_list('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/hotspot_select_genes.txt')
     # sub_adata = adata[:, select_genes]
 
     # ---- HOTSPOT co-expression
@@ -758,23 +927,30 @@ if __name__ == '__main__':
     # print(local_correlations)
 
     # ---- TESTS
-    more_stats = spatial_autocorrelation(adata, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10,
-                                         n_processes=20)
-    moran_genes = more_stats.loc[more_stats.FDR_I < 0.05].index
-    print(f'moran find {len(moran_genes)} genes')  # 3860
-    geary_genes = more_stats.loc[more_stats.FDR_C < 0.05].index
-    print(f'geary find {len(geary_genes)} genes')  # 7063
-    getis_genes = more_stats.loc[more_stats.FDR_G < 0.05].index
-    print(f'getis find {len(getis_genes)} genes')  # 4285
-    inter_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes))
-    print(f'intersection gene num (of three stats): {len(inter_genes)}')  # 3416
-    print(f'inter_genes intersection with hotspot genes: {len(inter_genes.intersection(set(select_genes)))}')  # 2728
-
-    combind_fdrs = combind_fdrs(more_stats[['FDR_C', 'FDR_I', 'FDR_G']])
-    print(combind_fdrs)
-    print(combind_fdrs[combind_fdrs < 0.05].shape[0])  # 6961
-    more_stats['combinded'] = combind_fdrs
-    more_stats.to_csv('more_stats.csv', sep='\t')
+    print('Computing spatial weights matrix...')
+    ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key="spatial", n_neighbors=10)
+    cell_names = adata.obs_names
+    print('Shifting spatial weight matrix shape...')
+    fw = flat_weights(cell_names, ind, weights_n, n_neighbors=10)
+    print(fw)
+    # output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E16-18'
+    # more_stats = spatial_autocorrelation(adata, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10,
+    #                                      n_processes=20, output=output_dir)
+    # moran_genes = more_stats.loc[more_stats.FDR_I < 0.05].index
+    # print(f'moran find {len(moran_genes)} genes')  # 3860
+    # geary_genes = more_stats.loc[more_stats.FDR_C < 0.05].index
+    # print(f'geary find {len(geary_genes)} genes')  # 7063
+    # getis_genes = more_stats.loc[more_stats.FDR_G < 0.05].index
+    # print(f'getis find {len(getis_genes)} genes')  # 4285
+    # inter_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes))
+    # print(f'intersection gene num (of three stats): {len(inter_genes)}')  # 3416
+    # print(f'inter_genes intersection with hotspot genes: {len(inter_genes.intersection(set(select_genes)))}')  # 2728
+    #
+    # combind_fdrs = combind_fdrs(more_stats[['FDR_C', 'FDR_I', 'FDR_G']])
+    # print(combind_fdrs)
+    # print(combind_fdrs[combind_fdrs < 0.05].shape[0])  # 6961
+    # more_stats['combinded'] = combind_fdrs
+    # more_stats.to_csv('more_stats.csv', sep='\t')
 
     # ----
     # from esda.getisord import G
@@ -788,3 +964,13 @@ if __name__ == '__main__':
     # gene_expression_matrix = adata.layers['raw_counts']
     # g = G(gene_expression_matrix[:, 0], w)
     # print(g.G)
+
+    # ---TEST BV
+    select_genes = list(adata.var_names)[:50]
+    print("Computing global bivariate geary'C value in parallel...")
+    local_correlations_bv_gc = global_bivariate_gearys_C(adata, fw, select_genes, num_workers=12)
+    # local_correlations_bv_mr = global_bivariate_moran_R(adata, fw, select_genes)  # 原来我没有给bi_moran写多进程。。。
+    # # print(local_correlations_bv_gc)
+    # # print(local_correlations_bv_mr)
+    # local_correlations_bv_mr.to_csv('local_correlations_bv_mr.csv')
+    # local_correlations_bv_gc.to_csv('local_correlations_bv_gc.csv')
