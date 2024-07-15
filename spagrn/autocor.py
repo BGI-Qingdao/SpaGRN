@@ -23,7 +23,7 @@ from esda.geary import Geary
 from pysal.lib import weights
 
 import multiprocessing
-from memory_profiler import profile, memory_usage
+from tqdm import tqdm
 
 
 def memory_time_decorator(func):
@@ -41,6 +41,7 @@ def memory_time_decorator(func):
         print(f"Maximum memory usage: {mem_usage[0]:.2f} MiB")
         print(f"Total time taken: {total_time:.4f} seconds")
         return func(*args, **kwargs)
+
     return wrapper
 
 
@@ -759,21 +760,14 @@ def hot(data):
 # -----------------------------------------------------#
 #               Bivariate Moran's I                    #
 # -----------------------------------------------------#
-def task_generator(adata, weights, selected_genes, n_genes):
+def task_generator(adata, weights: pd.DataFrame, selected_genes: list, n_genes: int):
     for i in range(n_genes):
         for j in range(i + 1, n_genes):
             yield (i, j, adata, weights, selected_genes)
 
 
-def global_bivariate_moran_R_two_genes(adata, weights, gene_x, gene_y):
-    """
-    Compute bivariate Moran's R value of two given genes
-        :param adata: experimental data
-    :param weights: spatial weights between two cells/spots
-    :param gene_x: gene name
-    :param gene_y: gene name
-    :return: float, bivariate Moran's R value
-    """
+def global_bivariate_moran_R_two_genes(adata, weights: pd.DataFrame, gene_x: str, gene_y: str):
+    """Compute bivariate Moran's R value of two given genes"""
     # 1 gene name to matrix id
     gene_x_id = adata.var.index.get_loc(gene_x)
     gene_y_id = adata.var.index.get_loc(gene_y)
@@ -801,22 +795,15 @@ def global_bivariate_moran_R_two_genes(adata, weights, gene_x, gene_y):
 def compute_pair_m(args):
     """Apply function on two genes"""
     i, j, adata, weights, selected_genes = args
+    process_id = os.getpid()
+    print(f"Computing pair ({i}, {j}) in process ID {process_id}")
     gene1 = selected_genes[i]
     gene2 = selected_genes[j]
     value = global_bivariate_moran_R_two_genes(adata, weights, gene1, gene2)
     return i, j, value
 
 
-def run_in_parallel_m(adata, weights: pd.DataFrame, selected_genes, n_genes, num_workers):
-    """
-
-    :param adata:
-    :param weights:
-    :param selected_genes:
-    :param n_genes:
-    :param num_workers:
-    :return:
-    """
+def run_in_parallel_m(adata, weights: pd.DataFrame, selected_genes: list, n_genes: int, num_workers: int) -> np.array:
     print('Starting function run_in_parallel...')
     result_matrix = np.zeros((n_genes, n_genes))
     pool = multiprocessing.Pool(processes=num_workers)
@@ -834,14 +821,14 @@ def run_in_parallel_m(adata, weights: pd.DataFrame, selected_genes, n_genes, num
     return result_matrix
 
 
-def global_bivariate_moran_R(adata, weights: pd.DataFrame, selected_genes, num_workers=4):
+def global_bivariate_moran_R(adata, weights: pd.DataFrame, selected_genes: list, num_workers: int = 4) -> pd.DataFrame:
     """
-
-    :param adata:
-    :param weights:
-    :param selected_genes:
-    :param num_workers:
-    :return:
+    Compute bivariate Moran's R
+    :param adata: data containing gene expression matrix
+    :param weights: spatial weights matrix for cells/spots
+    :param selected_genes: interest genes to compute bivariate Moran's R for
+    :param num_workers: number of parallel jobs
+    :return: gene x gene, value is bivariate Moran's R
     """
     n_genes = len(selected_genes)
     start_time = time.time()
@@ -851,29 +838,13 @@ def global_bivariate_moran_R(adata, weights: pd.DataFrame, selected_genes, num_w
     print(f"run_in_parallel_m: Total time taken: {total_time:.4f} seconds")
     df = pd.DataFrame(data=result_matrix, index=selected_genes, columns=selected_genes)
     return df
-# def global_bivariate_moran_R(adata, weights, selected_genes):
-#     n_genes = len(selected_genes)
-#     result_matrix = np.zeros((n_genes, n_genes))
-#     for i in range(n_genes):
-#         for j in range(i+1, n_genes):
-#             result_matrix[i, j] = global_bivariate_moran_R_two_genes(adata, weights, selected_genes[i], selected_genes[j])
-#             result_matrix[j, i] = result_matrix[i, j]
-#     df = pd.DataFrame(data=result_matrix, index=selected_genes, columns=selected_genes)
-#     return df
 
 
 # -----------------------------------------------------#
 #               Bivariate Greay's C                    #
 # -----------------------------------------------------#
 def global_bivariate_gearys_C_two_genes(adata, weights: pd.DataFrame, gene_x: str, gene_y: str):
-    """
-    Compute bivariate Geary's C value of two given genes
-    :param adata: experimental data
-    :param weights: spatial weights between two cells/spots
-    :param gene_x: gene name
-    :param gene_y: gene name
-    :return: float, bivariate Geary's C value
-    """
+    """Compute bivariate Geary's C value of two given genes"""
     # 1 gene name to matrix id
     gene_x_id = adata.var.index.get_loc(gene_x)
     gene_y_id = adata.var.index.get_loc(gene_y)
@@ -903,57 +874,23 @@ def global_bivariate_gearys_C_two_genes(adata, weights: pd.DataFrame, gene_x: st
 def compute_pair_c(args):
     """Apply function on two genes"""
     i, j, adata, weights, selected_genes = args
-    # Log process information to confirm parallel execution
     process_id = os.getpid()
-    # print(f"Computing pair ({i}, {j}) in process ID {process_id}")
+    print(f"Computing pair ({i}, {j}) in process ID {process_id}")
     gene1 = selected_genes[i]
     gene2 = selected_genes[j]
     value = global_bivariate_gearys_C_two_genes(adata, weights, gene1, gene2)
     return i, j, value
 
 
-def run_in_parallel(adata, weights: pd.DataFrame, selected_genes, n_genes, num_workers):
-    """
-
-    :param adata:
-    :param weights:
-    :param selected_genes:
-    :param n_genes:
-    :param num_workers:
-    :return:
-    """
+def run_in_parallel_c(adata, weights: pd.DataFrame, selected_genes, n_genes, num_workers) -> np.array:
+    """Compute bivariate Geary's C between two genes in a list of genes, in parallel"""
     print('Starting function run_in_parallel...')
     result_matrix = np.zeros((n_genes, n_genes))
     pool = multiprocessing.Pool(processes=num_workers)
     start_time = time.time()
+    # tasks = task_generator(adata, weights, selected_genes, n_genes)
     tasks = [(i, j, adata, weights, selected_genes) for i in range(n_genes) for j in range(i + 1, n_genes)]
-    end_time = time.time()
-    total_time = end_time - start_time
-    print(f"list comprehension: time taken: {total_time:.4f} seconds")
-    for result in pool.imap_unordered(compute_pair_c, tasks):
-        i, j, value = result
-        result_matrix[i, j] = value
-        result_matrix[j, i] = value
-    pool.close()
-    pool.join()
-    return result_matrix
-
-
-def run_in_parallel_c(adata, weights: pd.DataFrame, selected_genes, n_genes, num_workers):
-    """
-
-    :param adata:
-    :param weights:
-    :param selected_genes:
-    :param n_genes:
-    :param num_workers:
-    :return:
-    """
-    print('Starting function run_in_parallel...')
-    result_matrix = np.zeros((n_genes, n_genes))
-    pool = multiprocessing.Pool(processes=num_workers)
-    start_time = time.time()
-    tasks = task_generator(adata, weights, selected_genes, n_genes)
+    print(tasks[10])
     end_time = time.time()
     total_time = end_time - start_time
     print(f"task_generator: time taken: {total_time:.4f} seconds")
@@ -966,14 +903,14 @@ def run_in_parallel_c(adata, weights: pd.DataFrame, selected_genes, n_genes, num
     return result_matrix
 
 
-def global_bivariate_gearys_C(adata, weights: pd.DataFrame, selected_genes, num_workers=4):
+def global_bivariate_gearys_C(adata, weights: pd.DataFrame, selected_genes: list, num_workers: int = 4) -> pd.DataFrame:
     """
-
-    :param adata:
-    :param weights:
-    :param selected_genes:
-    :param num_workers:
-    :return:
+    Compute bivariate Geary's C
+    :param adata: data containing gene expression matrix
+    :param weights: spatial weights matrix for cells/spots
+    :param selected_genes: interest genes to compute bivariate Geary's C for
+    :param num_workers: number of parallel jobs
+    :return: gene x gene, value is bivariate Geary's C
     """
     n_genes = len(selected_genes)
     start_time = time.time()
@@ -998,16 +935,17 @@ if __name__ == '__main__':
     # print(f'gene num: {len(selected_genes)}')
 
     # ---- HOTSPOT autocorrelation
-    print('HOTSPOT autocorrelation computing...')
-    hs, hs_results = hot(adata)
-    hs_genes = hs_results.index
-    print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
-    print('Selecting gene which FDR is lower than 0.05')
-    select_genes = hs_results.loc[hs_results.FDR < 0.05].index
-    print(f'select_genes: {len(select_genes)}')  # select_genes: 3181 / 3188
-    save_list(list(select_genes), 'hotspot_select_genes.txt')
-    # select_genes = read_list('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/hotspot_select_genes.txt')
-    # sub_adata = adata[:, select_genes]
+    # print('HOTSPOT autocorrelation computing...')
+    # hs, hs_results = hot(adata)
+    # hs_genes = hs_results.index
+    # print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
+    # print('Selecting gene which FDR is lower than 0.05')
+    # select_genes = hs_results.loc[hs_results.FDR < 0.05].index
+    # print(f'select_genes: {len(select_genes)}')  # select_genes: 3181 / 3188
+    # save_list(list(select_genes), 'hotspot_select_genes.txt')
+    select_genes = read_list('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h/hotspot_og/hotspot_select_genes.txt')
+    sub_adata = adata[:, select_genes]
+    print(sub_adata)
 
     # ---- HOTSPOT co-expression
     # local_correlations = hs.compute_local_correlations(select_genes, jobs=12)  # jobs for parallelization
@@ -1015,8 +953,8 @@ if __name__ == '__main__':
 
     # ---- TESTS
     print('Computing spatial weights matrix...')
-    ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key="spatial", n_neighbors=10)
-    cell_names = adata.obs_names
+    ind, neighbors, weights_n = neighbors_and_weights(sub_adata, latent_obsm_key="spatial", n_neighbors=10)
+    cell_names = sub_adata.obs_names
     print('Shifting spatial weight matrix shape...')
     fw = flat_weights(cell_names, ind, weights_n, n_neighbors=10)
     # output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E16-18'
@@ -1052,12 +990,12 @@ if __name__ == '__main__':
     # print(g.G)
 
     # ---TEST BV
-    num_w = 20
-    print("Computing global bivariate geary'C value in parallel...")
-    local_correlations_bv_gc = global_bivariate_gearys_C(adata, fw, select_genes, num_workers=num_w)
-    local_correlations_bv_gc.to_csv('local_correlations_bv_gc.csv')
+    # num_w = 6
+    # output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h'
+    # print("Computing global bivariate geary'C value in parallel...")
+    # local_correlations_bv_gc = global_bivariate_gearys_C(sub_adata, fw, select_genes, num_workers=num_w)
+    # local_correlations_bv_gc.to_csv(f'{output_dir}/local_correlations_bv_gc.csv')
 
-    print("Computing global bivariate Moran's I value in parallel...")
-    local_correlations_bv_mr = global_bivariate_moran_R(adata, fw, select_genes, num_workers=num_w)
-    local_correlations_bv_mr.to_csv('local_correlations_bv_mr.csv')
-
+    # print("Computing global bivariate Moran's I value in parallel...")
+    # local_correlations_bv_mr = global_bivariate_moran_R(sub_adata, fw, select_genes, num_workers=num_w)
+    # local_correlations_bv_mr.to_csv(f'{output_dir}/local_correlations_bv_mr.csv')
