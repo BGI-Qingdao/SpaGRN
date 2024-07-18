@@ -7,6 +7,7 @@ import os
 import sys
 import time
 
+import scipy
 import scanpy as sc
 import numpy as np
 import pandas as pd
@@ -21,7 +22,6 @@ from scipy.sparse import csr_matrix, issparse
 from esda.getisord import G
 from esda.moran import Moran
 from esda.geary import Geary
-from pysal.lib import weights
 
 import multiprocessing
 from tqdm import tqdm
@@ -98,6 +98,16 @@ def neighbors_and_weights(data,
     weights = pd.DataFrame(weights, index=neighbors.index,
                            columns=neighbors.columns)
     return ind, neighbors, weights
+
+
+def get_w(ind, weights_n):
+    """Create a Weight object for esda program"""
+    nind = pd.DataFrame(data=ind)
+    nei = nind.transpose().to_dict('list')
+    w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
+    from pysal.lib import weights
+    w = weights.W(nei, weights=w_dict)
+    return w
 
 
 def flat_weights(cell_names, ind, weights, n_neighbors=30):
@@ -197,7 +207,7 @@ def cal_s2(w):
 
 
 def format_gene_array(gene_array):
-    if issparse(gene_array):
+    if scipy.sparse.issparse(gene_array):
         gene_array = gene_array.toarray()
     return gene_array.reshape(-1)
 
@@ -215,12 +225,6 @@ def cal_k(adata, gene_x_id, n):
 # Getis Ord General G
 # -----------------------------------------------------#
 def _getis_g(x, w):
-    """
-    Calculate getis ord general g for one gene
-    :param x:
-    :param w:
-    :return:
-    """
     x = np.asarray(x)
     w = np.asarray(w)
     numerator = np.sum(np.sum(w * np.outer(x, x)))
@@ -250,37 +254,31 @@ def _getis_g_p_value_one_gene(G, w, x):
     return p_value
 
 
-def getis_g_p_values_one_gene(adata, gene_x_id, ind, weights_n, layer_key='raw_counts'):
-    nind = pd.DataFrame(data=ind)
-    nei = nind.transpose().to_dict('list')
-    w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
-    w = weights.W(nei, weights=w_dict)
-    if layer_key:
-        gene_expression_matrix = adata.layers[layer_key]
-    else:
-        gene_expression_matrix = adata.X
+def getis_g_p_values_one_gene(gene_expression_matrix, gene_x_id, w):
     g = G(gene_expression_matrix[:, gene_x_id], w)
     return g.p_norm
 
 
 # parallel computing
 def _compute_g_for_gene(args):
-    adata, gene_x_id, ind, weights_n, layer_key = args
-    Gp = getis_g_p_values_one_gene(adata, gene_x_id, ind, weights_n, layer_key)
-    print(f'gene{gene_x_id}: p_value: {Gp}')
-    return Gp
+    gene_expression_matrix, gene_x_id, w = args
+    # Gp = getis_g_p_values_one_gene(adata, gene_x_id, ind, weights_n, layer_key)
+    # Gp = getis_g_p_values_one_gene(gene_expression_matrix, gene_x_id, w)
+    g = G(gene_expression_matrix[:, gene_x_id], w)
+    print(f'gene{gene_x_id}: p_value: {g.p_norm}')
+    return g.p_norm
 
 
-def _getis_g_parallel(adata, ind, weights_n, n_genes, n_processes=None, layer_key=None):
-    pool_args = [(adata, gene_x_id, ind, weights_n, layer_key) for gene_x_id in range(n_genes)]
+def _getis_g_parallel(gene_expression_matrix, w, n_genes, n_processes=None):
+    # pool_args = [(adata, gene_x_id, ind, weights_n, layer_key) for gene_x_id in range(n_genes)]
+    pool_args = [(gene_expression_matrix, gene_x_id, w) for gene_x_id in range(n_genes)]
     with multiprocessing.Pool(processes=n_processes) as pool:
         Gp_values = pool.map(_compute_g_for_gene, pool_args)
     return np.array(Gp_values)
 
 
 def getis_g_p_values(adata: ad.AnnData,
-                     ind,
-                     weights_n,
+                     Weights,
                      n_processes=None,
                      layer_key=None):
     """
@@ -291,14 +289,19 @@ def getis_g_p_values(adata: ad.AnnData,
     :return: (numpy.array) dimension: (n_genes, )
     """
     n_genes = len(adata.var_names)
-    if n_processes:
-        p_values = _getis_g_parallel(adata, ind, weights_n, n_genes, n_processes=n_processes, layer_key=layer_key)
+    # w = get_w(ind, weights_n)
+    if layer_key:
+        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
     else:
-        p_values = []
-        for gene_x_id, gene_name in enumerate(adata.var_names):
-            p_value = getis_g_p_value_one_gene(adata, gene_x_id, ind, weights_n)
-            p_values.append(p_value)
-        p_values = np.array(p_values)
+        gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
+    # if n_processes:
+    p_values = _getis_g_parallel(gene_expression_matrix, Weights, n_genes, n_processes=n_processes)
+    # else:
+    #     p_values = []
+    #     for gene_x_id, gene_name in enumerate(adata.var_names):
+    #         p_value = getis_g_p_value_one_gene(adata, gene_x_id, ind, weights_n)
+    #         p_values.append(p_value)
+    #     p_values = np.array(p_values)
     return p_values
 
 
@@ -306,13 +309,6 @@ def getis_g_p_values(adata: ad.AnnData,
 # M's I
 # -----------------------------------------------------#
 def _morans_i(adata, weights, layer_key='raw_counts'):
-    """
-    Calculate Moran’s I Global Autocorrelation Statistic for all genes in data
-    :param adata: AnnData
-    :param weights: neighbors connectivities array to use
-    :param layer_key: Key for adata.layers to choose vals
-    :return:
-    """
     if 'connectivities' not in adata.obsp.keys():
         adata.obsp['connectivities'] = weights
     morans_i_array = sc.metrics.morans_i(adata, layer=layer_key)
@@ -321,14 +317,6 @@ def _morans_i(adata, weights, layer_key='raw_counts'):
 
 
 def _morans_i_p_value_one_gene(adata, gene_x_id, weights, morans_i_array):
-    """
-    Calculate p-value for one variable (gene)
-    :param adata:
-    :param gene_x_id:
-    :param weights:
-    :param morans_i_array:
-    :return:
-    """
     I = morans_i_array[gene_x_id]  # moran's I stats for the gene
     n = len(adata.obs_names)  # number of cells
     EI = -1 / (n - 1)  # Moran’s I expected value
@@ -368,25 +356,26 @@ def _morans_i_parallel(n_genes, gene_expression_matrix, w, n_processes=None):
     return np.array(p_values)
 
 
-def morans_i_p_values(adata, ind, weights_n, layer_key='raw_counts', n_process=None):
+def morans_i_p_values(adata, Weights, layer_key='raw_counts', n_process=None):
     """
     Calculate Moran’s I Global Autocorrelation Statistic and its adjusted p-value
     :param adata: Anndata
-    :param weights:
+    :param Weights:
     :param layer_key:
     :param n_process:
     :return:
     """
     n_genes = len(adata.var_names)
-    nind = pd.DataFrame(data=ind)
-    nei = nind.transpose().to_dict('list')
-    w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
-    w = weights.W(nei, weights=w_dict)
+    # nind = pd.DataFrame(data=ind)
+    # nei = nind.transpose().to_dict('list')
+    # w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
+    # w = weights.W(nei, weights=w_dict)
+    # w = get_w(ind, weights_n)
     if layer_key:
-        gene_expression_matrix = adata.layers['raw_counts']
+        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
     else:
-        gene_expression_matrix = adata.X
-    p_values = _morans_i_parallel(n_genes, gene_expression_matrix, w, n_processes=n_process)
+        gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
+    p_values = _morans_i_parallel(n_genes, gene_expression_matrix, Weights, n_processes=n_process)
     return p_values
 
 
@@ -403,7 +392,6 @@ def _gearys_c(adata, weights, layer_key='raw_counts'):
 
 def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
     C = gearys_c_array[gene_x_id]
-
     n = len(adata.obs_names)
     EC = 1
     K = cal_k(adata, gene_x_id, n)
@@ -441,17 +429,26 @@ def _gearys_c_parallel(n_genes, gene_expression_matrix, w, n_processes=None):
     return np.array(p_values)
 
 
-def gearys_c_p_values(adata, ind, weights_n, layer_key='raw_counts', n_process=None):
+def gearys_c_p_values(adata, Weights, layer_key='raw_counts', n_process=None):
+    """
+    Main function to calculate Geary's C and its p-values
+    :param adata:
+    :param Weights:
+    :param layer_key:
+    :param n_process:
+    :return:
+    """
     n_genes = len(adata.var_names)
-    nind = pd.DataFrame(data=ind)
-    nei = nind.transpose().to_dict('list')
-    w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
-    w = weights.W(nei, weights=w_dict)
+    # nind = pd.DataFrame(data=ind)
+    # nei = nind.transpose().to_dict('list')
+    # w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
+    # w = weights.W(nei, weights=w_dict)
+    # w = get_w(ind, weights_n)
     if layer_key:
-        gene_expression_matrix = adata.layers['raw_counts']
+        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
     else:
-        gene_expression_matrix = adata.X
-    p_values = _gearys_c_parallel(n_genes, gene_expression_matrix, w, n_processes=n_process)
+        gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
+    p_values = _gearys_c_parallel(n_genes, gene_expression_matrix, Weights, n_processes=n_process)
     return p_values
 
 
@@ -460,9 +457,9 @@ def gearys_c_p_values(adata, ind, weights_n, layer_key='raw_counts', n_process=N
 # -----------------------------------------------------#
 def somde_p_values(adata, k=20, layer_key='raw_counts', latent_obsm_key="spatial"):
     if layer_key:
-        exp = adata.layers[layer_key]
+        exp = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
     else:
-        exp = adata.X
+        exp = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
     df = pd.DataFrame(data=exp.T,
                       columns=adata.obs_names,
                       index=adata.var_names)
@@ -470,7 +467,6 @@ def somde_p_values(adata, k=20, layer_key='raw_counts', latent_obsm_key="spatial
     corinfo = pd.DataFrame({
         "x": cell_coordinates[:, 0],
         "y": cell_coordinates[:, 1],
-        "z": cell_coordinates[:, 2]
     })
     corinfo.index = adata.obs_names
     corinfo["total_count"] = exp.sum(1)
@@ -520,20 +516,46 @@ def spatial_autocorrelation(adata,
                             n_processes=None,
                             prefix='',
                             output_dir='.'):
+    """
+    Calculate spatial autocorrelation values using Moran's I, Geary'C, Getis's G and SOMDE algorithms
+    :param adata:
+    :param layer_key:
+    :param latent_obsm_key:
+    :param n_neighbors:
+    :param somde_k:
+    :param n_processes:
+    :param prefix:
+    :param output_dir:
+    :return:
+    """
     print('Computing spatial weights matrix...')
+    sc.pp.filter_cells(adata, min_genes=100)
     ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key, n_neighbors=n_neighbors)
+    Weights = get_w(ind, weights_n)
     print("Computing Moran's I...")
-    morans_ps = morans_i_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
-    fdr_morans_ps = fdr(morans_ps)
-    print("Computing Geary's C...")
-    gearys_cs = gearys_c_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
-    fdr_gearys_cs = fdr(gearys_cs)
-    print("Computing Getis G...")
-    getis_gs = getis_g_p_values(adata, ind, weights_n, n_processes=n_processes, layer_key=layer_key)
-    fdr_getis_gs = fdr(getis_gs)
+    # morans_ps = morans_i_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
+    # # np.savetxt(f'{output_dir}/{prefix}_morans_ps.txt', morans_ps)
+    # fdr_morans_ps = fdr(morans_ps)
+    # # np.savetxt(f'{output_dir}/{prefix}_fdr_morans_ps.txt', fdr_morans_ps)
+    # print("Computing Geary's C...")
+    # gearys_cs = gearys_c_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
+    # # np.savetxt(f'{output_dir}/{prefix}_gearys_cs.txt', gearys_cs)
+    # fdr_gearys_cs = fdr(gearys_cs)
+    # # np.savetxt(f'{output_dir}/{prefix}_fdr_gearys_cs.txt', fdr_gearys_cs)
+    # print("Computing Getis G...")
+    getis_gs = getis_g_p_values(adata, Weights, n_processes=n_processes, layer_key=layer_key)
+    np.savetxt(f'{output_dir}/{prefix}_getis_gs.txt', getis_gs)
+    # fdr_getis_gs = fdr(getis_gs)
+    # np.savetxt(f'{output_dir}/{prefix}_fdr_getis_gs.txt', fdr_getis_gs)
+    morans_ps = np.loadtxt(f'{output_dir}/{prefix}_morans_ps.txt')
+    fdr_morans_ps = np.loadtxt(f'{output_dir}/{prefix}_fdr_morans_ps.txt')
+    gearys_cs = np.loadtxt(f'{output_dir}/{prefix}_gearys_cs.txt')
+    fdr_gearys_cs = np.loadtxt(f'{output_dir}/{prefix}_fdr_gearys_cs.txt')
+    # getis_gs = np.loadtxt(f'{output_dir}/{prefix}_getis_gs.txt')
+    # fdr_getis_gs = np.loadtxt(f'{output_dir}/{prefix}_fdr_getis_gs.txt')
     print('Computing SOMDE...')
     adjusted_p_values = somde_p_values(adata, k=somde_k, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
-
+    # np.savetxt(f'{output_dir}/{prefix}_fdr_SOMDE.txt', adjusted_p_values)
     more_stats = pd.DataFrame({
         'C': gearys_cs,
         'FDR_C': fdr_gearys_cs,
@@ -543,9 +565,7 @@ def spatial_autocorrelation(adata,
         'FDR_G': fdr_getis_gs,
         'FDR_SOMDE': adjusted_p_values
     }, index=adata.var_names)
-
     more_stats.to_csv(f'{output_dir}/{prefix}_more_stats.csv', sep='\t')
-
     return more_stats
 
 
@@ -557,14 +577,6 @@ def combind_fdrs(pvalue_df, method='fisher') -> np.array:
 
 
 def preprocess(adata: ad.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000):
-    """
-    Perform cleaning and quality control on the imported data before constructing gene regulatory network
-    :param min_genes:
-    :param min_cells:
-    :param min_counts:
-    :param max_gene_num:
-    :return: a anndata.AnnData
-    """
     adata.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
     # # find mito genes
     sc.pp.ﬁlter_cells(adata, min_genes=0)
@@ -591,7 +603,7 @@ def hot(data, layer_key="raw_counts", latent_obsm_key="spatial"):
 
 def select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=True):
     """
-
+    Select genes...
     :param more_stats:
     :param hs_results:
     :param fdr_threshold:
@@ -617,9 +629,14 @@ def select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=True):
     print(f'getis find {len(getis_genes)} genes')  # 4285
     print(f'SOMDE find {len(somde_genes)} genes')  # 2593
     print(f'intersection gene num: {len(inter_genes)}')  # 3416
+    # check somde results
+    t = set(somde_genes).intersection(set(hs_genes))
+    print(f'SOMDE genes {len(t)} in hs_genes')
     # select
     genes = inter_genes.intersection(set(hs_genes))
-    print(f'inter_genes intersection with FDR genes: {len(genes)}')  # 2728
+    print(f'4 methods: inter_genes intersection with FDR genes: {len(genes)}')
+    global_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes)).intersection(set(hs_genes))
+    print(f'Global inter_genes intersection with FDR genes: {len(genes)}')  # 2728
     return genes
 
 
@@ -634,19 +651,26 @@ def main(prefix,
          latent_obsm_key="spatial",
          n_neighbors=10,
          somde_k=20):
+    """
+    Main function to calculate spatial autocorrelation values for genes
+    :param prefix: project name
+    :param fn: h5ad file name
+    :param output_dir: output directory
+    :param n_process: number of processes when computing in parallel
+    :param min_genes: filter cells
+    :param min_cells: filter genes
+    :param min_counts: filter genes
+    :param layer_key: layers containing gene expression matrix
+    :param latent_obsm_key: key stored cell/spot spatial coordinates
+    :param n_neighbors: number of neighbors when building KNN
+    :param somde_k: number of neighbors when using SOMDE model
+    :return:
+    """
     adata = sc.read_h5ad(fn)
     adata = preprocess(adata, min_genes=min_genes, min_cells=min_cells, min_counts=min_counts)
     # ---- HOTSPOT autocorrelation
-    # print('HOTSPOT autocorrelation computing...')
     hs, hs_results = hot(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
     # Select genes
-    # hs_genes = hs_results.index
-    # print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
-    # print('Selecting gene which FDR is lower than 0.05')
-    # select_genes = hs_results.loc[hs_results.FDR < 0.05].index
-    # print(f'select_genes: {len(select_genes)}')  # select_genes: 3181 / 3188
-    # save_list(list(select_genes), f'{output_dir}/hotspot_select_genes.txt')
-    # sub_adata = adata[:, select_genes]
     more_stats = spatial_autocorrelation(adata,
                                          layer_key=layer_key,
                                          latent_obsm_key=latent_obsm_key,
@@ -659,35 +683,7 @@ def main(prefix,
 
 
 if __name__ == '__main__':
-    # print(len(sys.argv))
-    # print('Loading experimental data...')
-    # prefix = sys.argv[1]
-    # fn = sys.argv[2]
-    # output_dir = sys.argv[3]
-    # n_process = int(sys.argv[4])
-    # if len(sys.argv) > 5:
-    #     select_genes_fn = sys.argv[5]
-    # else:
-    #     select_genes_fn = None
-    # adata = sc.read_h5ad(fn)
-    # adata = preprocess(adata)
-    #
-    # # ---- HOTSPOT autocorrelation
-    # print('HOTSPOT autocorrelation computing...')
-    # hs, hs_results = hot(adata, layer_key=None)
-    # # Select genes
-    # if select_genes_fn:
-    #     select_genes = read_list(select_genes_fn)
-    # else:
-    #     hs_genes = hs_results.index
-    #     print(f'hs_genes: {len(hs_genes)}')  # hs_genes: 12097
-    #     print('Selecting gene which FDR is lower than 0.05')
-    #     select_genes = hs_results.loc[hs_results.FDR < 0.05].index
-    #     print(f'select_genes: {len(select_genes)}')  # select_genes: 3181 / 3188
-    #     save_list(list(select_genes), f'{output_dir}/hotspot_select_genes.txt')
-    # sub_adata = adata[:, select_genes]
-
-    # ---- LOCAL AUTOCORRELATION
+    project_id = sys.argv[1]
     # 1. E14-16h
     # more_stats = spatial_autocorrelation(sub_adata,
     #                                      layer_key="raw_counts",
@@ -698,13 +694,108 @@ if __name__ == '__main__':
     #                                      prefix='',
     #                                      output_dir='.')
     # select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=False)
+    if project_id == 'E14':
+        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E14-16h_pca.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h'
+        prefix = 'E14-16h'
+        print(f'Running for {prefix} project...')
+        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts",latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
+    elif project_id == 'E16':
+        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E16-18h_pca.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E16-18h'
+        prefix = 'E16-18h'
+        print(f'Running for {prefix} project...')
+        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    elif project_id == 'L1':
+        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L1_pca.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L1'
+        prefix = 'L1'
+        print(f'Running for {prefix} project...')
+        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    elif project_id == 'L2':
+        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L2_pca.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L2'
+        prefix = 'L2'
+        print(f'Running for {prefix} project...')
+        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    elif project_id == 'L3':
+        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L3_pca.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L3'
+        prefix = 'L3'
+        print(f'Running for {prefix} project...')
+        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
 
-    # 2. dryad.8t8s248, MERFISH, 2024-07-16
-    fn2 = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/new_data/Moffitt_and_Bambah-Mukku_et_al_merfish_all_cells.h5ad'
-    output_dir2 = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish'
-    main('merfish', fn2, output_dir2, n_process=3, layer_key=None,latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
+    project_id = int(project_id)
+    # 1. dryad.8t8s248, MERFISH, 2024-07-16
+    # mouse brain, preoptic region
+    if project_id == 1:
+        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish/Moffitt_and_Bambah-Mukku_et_al_merfish_all_cells.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish'
+        prefix = 'merfish'
+        print(f'Running for {prefix} project...')
+        main(prefix, fn, output_dir, n_process=20, layer_key=None,latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
 
-    # 3. 10X Visium human
-    # fn3 = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_BelgianCohort/sp.h5ad'
-    # output_dir3 = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/2.zenodo.7551712_BelgianCohort'
-    # main('zenodo.7551712_BelgianCohort', fn3, output_dir3, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None, latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    # 2. zenodo.7551712, 10X Visium, human colorectal cancer (CRC)
+    # 7 individuals; two samples per patient
+    # GRN: using known TF-target interactions from DoRothEA
+    # GRCh38
+    elif project_id == 2:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_BelgianCohort/sp.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/2.zenodo.7551712_BelgianCohort'
+        prefix = 'zenodo.7551712_BelgianCohort'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None, latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    elif project_id == 3:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_KoreanCohort/sp.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/3.zenodo.7551712_KoreanCohort'
+        prefix = 'zenodo.7551712_KoreanCohort'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    elif project_id == 4:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/4.zenodo.7551712_LiverMetastasis'
+        prefix = 'zenodo.7551712_LiverMetastasis'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+
+    # 3. human ovarian tumour
+    # 10X Visium (GSE211956) & CosMx (zenodo.8287970)
+    # High-grade serous ovarian tumours from 10 patients diagnosed with stage III-IV cancers
+    elif project_id == 5:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/5.zenodo.7551712_LiverMetastasis'
+        prefix = 'zenodo.7551712_LiverMetastasis'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+    elif project_id == 6:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/5.zenodo.7551712_LiverMetastasis'
+        prefix = 'zenodo.7551712_LiverMetastasis'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+
+    # 4. mouse, CosMx, brain with PFF induced PD
+    # 1 female and 2 male mic
+    # zenodo.10729766
+    elif project_id == 6:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.10729766/seurat_object_3mon.rds'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/6.zenodo.10729766_mouse_brain'
+        prefix = 'zenodo.10729766_mouse_brain'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=1, min_cells=3, min_counts=1, layer_key=None,
+             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+
+    # 5. zenodo.8063124
+    # human, Clear cell renal cell carcinoma (ccRCC)
+    # 12 tumor sections and 2 NAT controls
+    elif project_id == 7:
+        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.10729766/seurat_object_3mon.rds'
+        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/7.zenodo.8063124_human'
+        prefix = 'zenodo.10729766_mouse_brain'
+        print(f'Running for [{prefix}] project...')
+        main(prefix, fn, output_dir, n_process=3, min_genes=1, min_cells=3, min_counts=1, layer_key=None,
+             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
