@@ -147,8 +147,8 @@ def plot_3d_reg(data: anndata.AnnData,
 
     # prepare plotting data
     cell_coor = data.obsm[pos_label]
-    # auc_zscore = cal_zscore(auc_mtx)
-    # sub_zscore = auc_zscore[reg_name]
+    if isinstance(cell_coor, pd.DataFrame):
+        cell_coor = cell_coor.to_numpy()
     sub_zscore = auc_mtx[reg_name]
 
     from mpl_toolkits.mplot3d import Axes3D
@@ -216,6 +216,8 @@ def plot_3d_tf(data: anndata.AnnData,
 
     # prepare plotting data
     cell_coor = data.obsm[pos_label]
+    if isinstance(cell_coor, pd.DataFrame):
+        cell_coor = cell_coor.to_numpy()
     auc_zscore = cal_zscore(auc_mtx)
     sub_zscore = auc_zscore[reg_name]
 
@@ -404,7 +406,103 @@ def auc_heatmap(data: anndata.AnnData,
                        row_cluster=row_cluster,
                        col_cluster=col_cluster,
                        **kwargs)
-    g.cax.set_visible(True)
+    g.cax.set_visible(False)  # set colorbar
+    g.ax_heatmap.set_yticks([])
+    g.ax_heatmap.set_ylabel('')
+    g.ax_heatmap.set_xlabel('')
+    if save:
+        file_format = os.path.splitext(fn)[1].replace('.','')
+        plt.savefig(fn, format=file_format)
+    return g
+
+
+def isr_heatmap(data: anndata.AnnData,
+                cluster_label: str,
+                isr_mtx=None,
+                rss_fn=None,
+                topn=5,
+                save=True,
+                subset=True,
+                subset_size=5000,
+                fn='clusters_heatmap_top5.pdf',
+                legend_fn="rss_celltype_legend.pdf",
+                cluster_list=None,
+                row_cluster=False,
+                col_cluster=True,
+                cmap="YlGnBu",
+                vmin=-3, vmax=3,
+                yticklabels=True, xticklabels=True,
+                **kwargs):
+    """
+    Plot heatmap for Regulon specificity scores (RSS) value
+    :param data:
+    :param isr_mtx:
+    :param cluster_label:
+    :param rss_fn:
+    :param topn:
+    :param save:
+    :param subset:
+    :param subset_size:
+    :param fn:
+    :param legend_fn:
+    :param cluster_list: list of cluster names one prefer to use
+    :return:
+
+    Example:
+        # only plot ['CNS', 'amnioserosa', 'carcass'] clusters and their corresponding top regulons
+        auc_heatmap(adata, auc_mtx, cluster_label='celltypes', subset=False,
+                    rss_fn='regulon_specificity_scores.txt',
+                    cluster_list=['CNS', 'amnioserosa', 'carcass'])
+    """
+    if isr_mtx is None:
+        isr_mtx = data.obsm['isr']
+    if subset and len(data.obs) > subset_size:
+        fraction = subset_size / len(data.obs)
+        # do stratified sampling
+        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = draw_obs[cluster_label].sort_values()
+    else:
+        # load the regulon_list from a file using the load_signatures function
+        cell_order = data.obs[cluster_label].sort_values()
+    celltypes = sorted(list(set(data.obs[cluster_label])))
+
+    # Regulon specificity scores (RSS) across predicted cell types
+    if rss_fn is None:
+        rss_cellType = regulon_specificity_scores(isr_mtx, data.obs[cluster_label])
+    else:
+        rss_cellType = pd.read_csv(rss_fn, index_col=0)
+    # Select the top 5 regulon_list from each cell type
+    topreg = get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
+
+    if cluster_list is None:
+        cluster_list = celltypes.copy()
+    colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
+    colormap = [colorsd[x] for x in cell_order]
+
+    # plot legend
+    plot_legend(colorsd, fn=legend_fn)
+
+    # plot z-score
+    isr_zscore = cal_zscore(isr_mtx)
+    try:
+        plot_data = isr_zscore[topreg].loc[cell_order.index]
+    except KeyError:
+        com_topreg = list(set(topreg).intersection(set(isr_zscore.columns)))
+        plot_data = isr_zscore[com_topreg].loc[cell_order.index]
+    sns.set(font_scale=1.2)
+    g = sns.clustermap(plot_data,
+                       annot=False,
+                       square=False,
+                       linecolor='gray',
+                       yticklabels=yticklabels, xticklabels=xticklabels,
+                       vmin=vmin, vmax=vmax,
+                       cmap=cmap,
+                       row_colors=colormap,
+                       row_cluster=row_cluster,
+                       col_cluster=col_cluster,
+                       **kwargs)
+    g.cax.set_visible(False)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
@@ -502,13 +600,14 @@ def auc_heatmap_reorder(data: anndata.AnnData,
                         cluster_label: str,
                         rss_fn: str,
                         order_fn: Optional[str] = None,
-                        target_celltype: str = 'ventricular-specific CM',
+                        topn=10,
                         save=True,
                         subset=True,
                         subset_size=5000,
                         fn='clusters_heatmap_top5.png',
                         legend_fn="rss_celltype_legend.png",
-                        cluster_list=None):
+                        cluster_list=None,
+                        **kwargs):
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
@@ -530,30 +629,45 @@ def auc_heatmap_reorder(data: anndata.AnnData,
                     rss_fn='regulon_specificity_scores.txt',
                     cluster_list=['CNS', 'amnioserosa', 'carcass'])
     """
-    if subset and len(data.obs) > subset_size:
-        fraction = subset_size / len(data.obs)
-        # do stratified sampling
-        draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
-        # load the regulon_list from a file using the load_signatures function
-        cell_order = draw_obs[cluster_label].sort_values()
+    # 1. Custom regulons
+    # Select top regulons
+    if order_fn is None:
+        # Regulon specificity scores (RSS) across predicted cell types
+        if rss_fn is None:
+            rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+        else:
+            rss_cellType = pd.read_csv(rss_fn, index_col=0)
+        topreg = get_top_regulons(data, cluster_label, rss_cellType, topn=topn)
     else:
-        # load the regulon_list from a file using the load_signatures function
-        cell_order = data.obs[cluster_label].sort_values()
+        with open(order_fn, 'r') as f:
+            topreg = f.read().splitlines()
+
+    # 2. If Subset
+    # if subset and len(data.obs) > subset_size:
+    #     fraction = subset_size / len(data.obs)
+    #     # do stratified sampling
+    #     draw_obs = data.obs.groupby(cluster_label, group_keys=False).apply(lambda x: x.sample(frac=fraction))
+    #     # load the regulon_list from a file using the load_signatures function
+    #     cell_order = draw_obs[cluster_label].sort_values()
+    # else:
+    #     # load the regulon_list from a file using the load_signatures function
+    #     cell_order = data.obs[cluster_label].sort_values()
+
+    # #3. Custom cell type/cluster order
+    # SET CELL ORDERS
     celltypes = sorted(list(set(data.obs[cluster_label])))
-
-    # Regulon specificity scores (RSS) across predicted cell types
-    if rss_fn is None:
-        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
-    else:
-        rss_cellType = pd.read_csv(rss_fn, index_col=0)
-
-    # load regulon order list
-    with open(order_fn, 'r') as f:
-        topreg = f.read().splitlines()
-
     if cluster_list is None:
-        cluster_list = celltypes.copy()
-    colorsd = dict((i, c) for i, c in zip(cluster_list, COLORS))
+        # cluster_list = celltypes
+        cell_order = data.obs[cluster_label].sort_values()
+    else:  # when provide cluster list
+        # sort cell types in a custom order
+        data.obs[cluster_label] = pd.Categorical(data.obs[cluster_label], categories=cluster_list, ordered=True)
+        data.obs = data.obs.sort_values(cluster_label)
+        cell_order = data.obs[cluster_label]
+
+    # 4. Make plotting data
+    # map color to cell type
+    colorsd = dict((i, c) for i, c in zip(celltypes, COLORS))
     colormap = [colorsd[x] for x in cell_order]
 
     # plot legend
@@ -571,13 +685,15 @@ def auc_heatmap_reorder(data: anndata.AnnData,
                        vmin=-1.5, vmax=2.5,
                        cmap="YlGnBu",
                        row_colors=colormap,
-                       row_cluster=False, col_cluster=False,
-                       figsize=(3 * CM, 5.5 * CM))
-    g.cax.set_visible(True)
+                       row_cluster=False, col_cluster=True,
+                       # figsize=(3 * CM, 5.5 * CM),
+                       **kwargs)
+    g.cax.set_visible(False)
     g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
     if save:
+        plt.tight_layout()
         file_format = os.path.splitext(fn)[1].replace('.','')
         plt.savefig(fn, format=file_format)
     return g
@@ -909,11 +1025,13 @@ def get_top_regulons(data: anndata.AnnData,
     """
     # Select the top 5 regulon_list from each cell type
     cats = sorted(list(set(data.obs[cluster_label])))
+    # 2024-08-21: TODO: is this really necessary
     # 2023-09-22
     # all cell type labels should be strings
     if not all(isinstance(x, str) for x in cats):
         cats = [str(x) for x in cats]
     rss_celltype.index = rss_celltype.index.astype(str)
+
     # 2023-09-22
     topreg = []
     for i, c in enumerate(cats):
@@ -1118,9 +1236,11 @@ def plot_celltype(adata, color='annotation', fn='cell_type.png', custom_labels=N
         labels = list(annotations)
 
     for i, label in enumerate(labels):
-        data = adata[adata.obs[color] == (i + 1)]
+        # data = adata[adata.obs[color] == (i + 1)]
+        data = adata[adata.obs[color] == label]
         c = [color_dict[anno] for anno in data.obs[color]]
-        plt.scatter(data.obsm[spatial_label]['x'], data.obsm[spatial_label]['y'], s=s, c=c, marker=marker, label=label)
+        # plt.scatter(data.obsm[spatial_label]['x'], data.obsm[spatial_label]['y'], s=s, c=c, marker=marker, label=label)
+        plt.scatter(data.obsm[spatial_label][:, 0], data.obsm[spatial_label][:, 1], s=s, c=c, marker=marker, label=label)
     plt.gca().set_aspect('equal')
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.tight_layout()
@@ -1129,6 +1249,54 @@ def plot_celltype(adata, color='annotation', fn='cell_type.png', custom_labels=N
     file_format = os.path.splitext(fn)[1].replace('.', '')
     plt.savefig(fn, format=file_format)
     plt.close()
+
+
+def plot_leiden(adata):
+    colors = adata.uns['leiden_colors']
+    celltypes = list(adata.obs['leiden'].unique())
+    color_dict = dict(zip(celltypes, colors))
+    for i, label in enumerate(celltypes):
+        data = adata[adata.obs['leiden'] == label]
+        c = [color_dict[anno] for anno in data.obs['leiden']]
+        plt.scatter(data.obsm['spatial']['x'], data.obsm['spatial']['y'], s=1, c=c, marker='.', label=label)
+    plt.gca().set_aspect('equal')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.box(False)
+    plt.axis('off')
+    plt.savefig('mouse_brain_E15_leiden_spatial_0.9.png')
+    plt.show()
+    plt.close()
+
+
+def plot_cancer(adata):
+    colors = COLORS
+    celltypes = list(adata.obs['bayes_clusters'].unique())
+    color_dict = dict(zip(celltypes, colors))
+    for i, label in enumerate(celltypes):
+        data = adata[adata.obs['bayes_clusters'] == label]
+        c = [color_dict[anno] for anno in data.obs['bayes_clusters']]
+        plt.scatter(data.obsm['spatial']['x'], data.obsm['spatial']['y'], s=1, c=c, marker='.', label=label)
+    plt.gca().set_aspect('equal')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.box(False)
+    plt.axis('off')
+    plt.savefig('cancer_celltype.pdf', format='pdf')
+    plt.close()
+
+
+def plot_ct(adata, colors, ctlabel='leiden'):
+    celltypes = list(adata.obs[ctlabel].unique())
+    color_dict = dict(zip(celltypes, colors))
+    for i, label in enumerate(celltypes):
+        data = adata[adata.obs[ctlabel] == label]
+        c = [color_dict[anno] for anno in data.obs[ctlabel]]
+        plt.scatter(data.obsm['spatial']['x'], data.obsm['spatial']['y'], s=50, c=c, marker='.', label=label)
+    plt.gca().set_aspect('equal')
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.tight_layout()
+    plt.show()
 
 
 def plot_gene(data: anndata.AnnData,
@@ -1172,6 +1340,7 @@ def plot_gene(data: anndata.AnnData,
     if not show_bg:
         plt.box(False)
         plt.axis('off')
+    plt.axis("equal")
     plt.title(gene_name)
     plt.colorbar(sc, shrink=0.35)
     file_format = os.path.splitext(fn)[1].replace('.', '')
@@ -1230,6 +1399,7 @@ def plot_ligand_receptor(data,
     if not show_bg:
         plt.box(False)
         plt.axis('off')
+    plt.axis("equal")
     plt.title(f'{ligand}_{receptor}')
     # plt.colorbar(sc, shrink=0.35)
     file_format = os.path.splitext(fn)[1].replace('.', '')
@@ -1308,6 +1478,45 @@ def generate_plot_data(data, auc_mtx, parameters):
     if mode == 'mean':
         plot_data = plot_data.groupby(['celltype']).mean()
     return plot_data, colorsd, colormap
+
+
+def t():
+    exp = np.array()
+    array = np.array()
+    for i,row in coordinates:
+        x,y = row
+        array[x,y] = exp[i,:]
+
+
+def plot_isr(mtx,
+             cell_coor,
+             reg_name: str,
+             receptor_name,
+             fn: str,
+             show_bg=False,
+             marker='.',
+             edgecolors='none',
+             cmap='plasma',
+             lw=0,
+             s=1,
+             **kwargs):
+    sc = plt.scatter(cell_coor['x'],
+                     cell_coor['y'],
+                     c=mtx,
+                     marker=marker,
+                     edgecolors=edgecolors,
+                     cmap=cmap,
+                     s=s,
+                     lw=lw, **kwargs)
+    if not show_bg:
+        plt.box(False)
+        plt.axis('off')
+    plt.axis("equal")
+    plt.title(f'{reg_name}(+) {receptor_name}')
+    plt.colorbar(sc, shrink=0.35)
+    file_format = os.path.splitext(fn)[1].replace('.', '')
+    plt.savefig(fn, format=file_format)
+    plt.close()
 
 
 if __name__ == '__main__':
