@@ -37,6 +37,8 @@ from pyscenic.prune import prune2df, df2regulons
 # modules in self project
 from .scoexp import ScoexpMatrix
 from .network import Network
+from .autocor import *
+from .corexp import *
 
 
 def before_cistarget(tfs: list, modules: Sequence[Regulon], prefix: str):
@@ -123,7 +125,7 @@ class InferNetwork(Network):
     Algorithms to infer Gene Regulatory Networks (GRNs)
     """
 
-    def __init__(self, adata=None, pos_label='spatial'):
+    def __init__(self, adata=None, pos_label='spatial', prefix=None):
         """
         Constructor of this Object.
         :param data:
@@ -132,7 +134,14 @@ class InferNetwork(Network):
         """
         super().__init__()
         self.data = adata
-        self.load_data_info(pos_label)
+        # self.load_data_info(pos_label)
+
+        self.more_stats = None
+        self.weights = None
+        self.ind = None
+        self.weights_n = None
+
+        self.prefix = prefix
 
         # other settings
         self._params = {
@@ -177,7 +186,6 @@ class InferNetwork(Network):
 
               method='spg',
               sigm=15,
-              c_threshold=0.8,
               layers='raw_counts',
               model='bernoulli',
               latent_obsm_key='spatial',
@@ -185,46 +193,32 @@ class InferNetwork(Network):
               n_neighbors=30,
               weighted_graph=False,
               rho_mask_dropouts=False,
+              local=False,
+              methods=None,
+              operation='intersection',
+              raw=True,
+              combine=False,
+              mode='moran',
+              somde_k=20,
               noweights=None,
               normalize: bool = False):
-        """
-
-        :param receptor_key:
-        :param niche_df:
-        :param c_threshold:
-        :param n_neighbors:
-        :param weighted_graph:
-        :param rho_mask_dropouts:
-        :param databases:
-        :param motif_anno_fn:
-        :param tfs_fn:
-        :param target_genes:
-        :param num_workers:
-        :param save_tmp:
-        :param cache:
-        :param prefix:
-        :param method: method from [boost/spg/scc]
-        :param sigm: sigma for scc, default 15 (assumption for 15um)
-        :param layers:
-        :param model:
-        :param latent_obsm_key:
-        :param umi_counts_obs_key:
-        :param cluster_label:
-        :param noweights:
-        :param normalize:
-        :return:
-        """
         assert method in ['boost', 'spg', 'scc'], "method options are boost/spg/scc"
         self.data.uns['method'] = method
         global adjacencies
-        matrix = self._matrix
+        # matrix = self._matrix
+        # if layers:
+        #     matrix = self.data.layers[layers]
+        # else:
+        #     matrix = self.data.X
+        matrix = self.data.X
         df = self._data.to_df()
 
         if num_workers is None:
             num_workers = cpu_count()
 
         if target_genes is None:
-            target_genes = self._gene_names
+            # target_genes = self._gene_names
+            target_genes = self.data.var_names.values
 
         if noweights is None:
             noweights = self.params[method]["noweights"]
@@ -257,7 +251,6 @@ class InferNetwork(Network):
                                            fn=f'{prefix}_adj.csv')
         elif method == 'spg':
             adjacencies = self.spg(self.data,
-                                   c_threshold=c_threshold,
                                    tf_list=tfs,
                                    jobs=num_workers,
                                    layer_key=layers,
@@ -267,7 +260,14 @@ class InferNetwork(Network):
                                    n_neighbors=n_neighbors,
                                    weighted_graph=weighted_graph,
                                    cache=cache,
-                                   fn=f'{prefix}_adj.csv')
+                                   fn=f'{prefix}_{mode}_adj.csv',
+                                   local=local,
+                                   methods=methods,
+                                   operation=operation,
+                                   raw=raw,
+                                   combine=combine,
+                                   mode=mode,
+                                   somde_k=somde_k)
 
         # 4. Compute Modules
         # ctxcore.genesig.Regulon
@@ -304,6 +304,7 @@ class InferNetwork(Network):
             self.get_receptors(niche_df, receptor_key=receptor_key, save_tmp=save_tmp,
                                fn=f'{prefix}_filtered_targets_receptor.json')
             self.receptor_auc()
+            self.isr()
 
         # 7. Calculate Regulon Specificity Scores
         self.cal_regulon_score(cluster_label=cluster_label, save_tmp=save_tmp,
@@ -426,11 +427,136 @@ class InferNetwork(Network):
         self.data.uns['adj'] = adjacencies
         return adjacencies
 
+    def spatial_autocorrelation(self,
+                                adata,
+                                layer_key="raw_counts",
+                                latent_obsm_key="spatial",
+                                n_neighbors=10,
+                                somde_k=20,
+                                n_processes=None,
+                                local=True,
+                                raw=True,
+                                cache=False):
+        """
+        Calculate spatial autocorrelation values using Moran's I, Geary'C, Getis's G and SOMDE algorithms
+        :param adata:
+        :param layer_key:
+        :param latent_obsm_key:
+        :param n_neighbors:
+        :param somde_k:
+        :param n_processes:
+        :param local:
+        :param raw:
+        :param cache:
+        :return:
+        """
+        print('Computing spatial weights matrix...')
+        self.ind, neighbors, self.weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key,
+                                                                    n_neighbors=n_neighbors)
+        Weights = get_w(self.ind, self.weights_n)
+        self.weights = Weights
+
+        more_stats = pd.DataFrame(index=adata.var_names)
+        if local:
+            if cache and os.path.isfile('local_more_stats.csv'):
+                print('Found file local_more_stats.csv')
+                more_stats = pd.read_csv('local_more_stats.csv', index_col=0, sep='\t')
+                self.more_stats = more_stats
+                return more_stats
+            print('Computing SOMDE...')
+            adjusted_p_values = somde_p_values(adata, k=somde_k, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
+            more_stats['FDR_SOMDE'] = adjusted_p_values
+            more_stats.to_csv('local_more_stats.csv', sep='\t')
+        else:
+            if cache and os.path.isfile('more_stats.csv'):
+                print('Found file more_stats.csv')
+                more_stats = pd.read_csv('more_stats.csv', index_col=0, sep='\t')
+                self.more_stats = more_stats
+                return more_stats
+            print("Computing Moran's I...")
+            morans_ps = morans_i_p_values(adata, Weights, layer_key=layer_key, n_process=n_processes)
+            fdr_morans_ps = fdr(morans_ps)
+            print("Computing Geary's C...")
+            gearys_cs = gearys_c_p_values(adata, Weights, layer_key=layer_key, n_process=n_processes)
+            fdr_gearys_cs = fdr(gearys_cs)
+            print("Computing Getis G...")
+            getis_gs = getis_g_p_values(adata, Weights, n_processes=n_processes, layer_key=layer_key, raw=raw)
+            fdr_getis_gs = fdr(getis_gs)
+            # save results
+            more_stats = pd.DataFrame({
+                'C': gearys_cs,
+                'FDR_C': fdr_gearys_cs,
+                'I': morans_ps,
+                'FDR_I': fdr_morans_ps,
+                'G': getis_gs,
+                'FDR_G': fdr_getis_gs
+            }, index=adata.var_names)
+            more_stats.to_csv('more_stats.csv', sep='\t')
+            # self.check_stats(more_stats,fdr_threshold=0.05)
+
+        self.more_stats = more_stats
+        return more_stats
+
+    def select_genes(self, methods=None, fdr_threshold=0.05, local=True, combine=True, operation='intersection'):
+        """
+        Select genes based FDR values...
+        :param methods:
+        :param fdr_threshold:
+        :param local:
+        :param combine:
+        :param operation:
+        :return:
+        """
+        if methods is None:
+            methods = ['FDR_C', 'FDR_I', 'FDR_G', 'FDR']
+        # 1. LOCAL
+        if local:
+            somde_genes = self.more_stats.loc[self.more_stats.FDR_SOMDE < fdr_threshold].index
+            print(f'SOMDE find {len(somde_genes)} genes')
+            # TODO: 2024-08-06: only use local genes
+            save_list(somde_genes, 'local_genes.txt')
+            return somde_genes
+        # 2. GLOBAL
+        # 2.1 combine p-values
+        elif combine:
+            cfdrs = combind_fdrs(self.more_stats[['FDR_C', 'FDR_I', 'FDR_G', 'FDR']])  # combine 4 types of p-values
+            self.more_stats['combined'] = cfdrs
+            genes = self.more_stats.loc[self.more_stats['combined'] < fdr_threshold].index
+            print(f"Combinded FDRs gives: {len(cgenes)} genes")
+            save_list(genes, 'combined_fdr_genes.txt')
+            return genes
+        # 2.2 individual p-values
+        elif methods:
+            indices_list = [set(self.more_stats[self.more_stats[m] < fdr_threshold].index) for m in methods]
+            if operation == 'intersection':
+                global_inter_genes = set.intersection(*indices_list)
+                print(f'global spatial gene num (intersection): {len(global_inter_genes)}')
+                save_list(global_inter_genes, f'global_genes_{len(methods)}methods_inter.txt')
+                return global_inter_genes
+            elif operation == 'union':
+                global_union_genes = set().union(*indices_list)
+                print(f'global spatial gene num (union): {len(global_union_genes)}')
+                save_list(global_union_genes, f'global_genes_{len(methods)}methods_union.txt')
+                return global_union_genes
+
+    def check_stats(self, more_stats):
+        """Compute gene numbers for each"""
+        moran_genes = more_stats.loc[more_stats.FDR_I < fdr_threshold].index
+        geary_genes = more_stats.loc[more_stats.FDR_C < fdr_threshold].index
+        getis_genes = more_stats.loc[more_stats.FDR_G < fdr_threshold].index
+        hs_genes = more_stats.loc[(more_stats.FDR < fdr_threshold)].index
+        print(f"Moran's I find {len(moran_genes)} genes")
+        print(f"Geary's C find {len(geary_genes)} genes")
+        print(f'Getis find {len(getis_genes)} genes')
+        print(f"HOTSPOT find {len(hs_genes)} genes")
+        if 'FDR_SOMDE' in more_stats.columns:
+            somde_genes = more_stats.loc[more_stats.FDR_SOMDE < fdr_threshold].index
+            print(f'SOMDE find {len(somde_genes)} genes')
+
     def spg(self,
             data: anndata.AnnData,
-            c_threshold: float,
             layer_key=None,
-            model='bernoulli',
+            model='danb',
             latent_obsm_key="spatial",
             umi_counts_obs_key=None,
             weighted_graph=False,
@@ -440,12 +566,18 @@ class InferNetwork(Network):
             save_tmp=True,
             jobs=None,
             cache=False,
+            local=False,
+            methods=None,
+            operation='intersection',
+            raw=True,
+            combine=True,
+            somde_k=20,
             fn: str = 'adj.csv',
+            mode='moran',
             **kwargs) -> pd.DataFrame:
         """
         Inference of co-expression modules by spatial-proximity-graph (SPG) model.
         :param data: Count matrix (shape is cells by genes)
-        :param c_threshold:
         :param layer_key: Key in adata.layers with count data, uses adata.X if None.
         :param model: Specifies the null model to use for gene expression.
             Valid choices are:
@@ -455,27 +587,28 @@ class InferNetwork(Network):
                 * 'none': Assumes data has been pre-standardized
         :param latent_obsm_key: Latent space encoding cell-cell similarities with euclidean
             distances.  Shape is (cells x dims). Input is key in adata.obsm
-        :param distances_obsp_key: Distances encoding cell-cell similarities directly
-            Shape is (cells x cells). Input is key in adata.obsp
         :param umi_counts_obs_key: Total umi count per cell.  Used as a size factor.
             If omitted, the sum over genes in the counts matrix is used. 'total_counts'
         :param weighted_graph: Whether or not to create a weighted graph
         :param n_neighbors: Neighborhood size
-        :param neighborhood_factor: Used when creating a weighted graph.  Sets how quickly weights decay
-            relative to the distances within the neighborhood.  The weight for
-            a cell with a distance d will decay as exp(-d/D) where D is the distance
-            to the `n_neighbors`/`neighborhood_factor`-th neighbor.
-        :param approx_neighbors: Use approximate nearest neighbors or exact scikit-learn neighbors. Only
-            when hotspot initialized with `latent`.
         :param fdr_threshold: Correlation threshold at which to stop assigning genes to modules
         :param tf_list: predefined TF names
         :param save_tmp: if save results onto disk
         :param jobs: Number of parallel jobs to run_all
         :param cache:
+        :param local:
+        :param combine:
+        :param mode:
+        :param somde_k:
+        :param raw:
+        :param operation:
+        :param methods:
         :param fn: output file name
         :return: A dataframe, local correlation Z-scores between genes (shape is genes x genes)
         """
+        global local_correlations
         if cache and os.path.isfile(fn):
+            print(f'Found file {fn}')
             local_correlations = pd.read_csv(fn)
             self.data.uns['adj'] = local_correlations
             return local_correlations
@@ -488,26 +621,66 @@ class InferNetwork(Network):
                                  **kwargs)
             hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
             hs_results = hs.compute_autocorrelations()
-            # Select genes
-            hs_genes = hs_results.loc[(hs_results.FDR < fdr_threshold) & (hs_results.C > c_threshold)].index
-            local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
+            # hs_genes = hs_results[hs_results.FDR < fdr_threshold].index
+            # 1: Select genes
+            self.spatial_autocorrelation(data,
+                                         layer_key=layer_key,
+                                         latent_obsm_key=latent_obsm_key,
+                                         n_neighbors=n_neighbors,
+                                         somde_k=somde_k,
+                                         n_processes=jobs,
+                                         local=local,
+                                         raw=raw,
+                                         cache=cache)
+            self.more_stats['FDR'] = hs_results.FDR
+            self.more_stats.to_csv('more_stats.csv', sep='\t')
+            # TODO:
+            hs_genes = self.select_genes(methods=methods,
+                                         fdr_threshold=fdr_threshold,
+                                         local=local,
+                                         combine=combine,
+                                         operation=operation)
+            hs_genes = list(hs_genes)
 
-        # subset by TFs
-        if tf_list:
-            common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
-            assert len(common_tf_list) > 0, 'predefined TFs not found in data'
-        else:
-            common_tf_list = local_correlations.columns
+            # 2. Define gene-gene relationships with pair-wise local correlations
+            print(f'Current mode is {mode}')
+            if mode == 'zscore':
+                # subset by TFs
+                local_correlations = hs.compute_local_correlations(hs_genes, jobs=jobs)  # jobs for parallelization
+                if tf_list:
+                    common_tf_list = list(set(tf_list).intersection(set(local_correlations.columns)))
+                    assert len(common_tf_list) > 0, 'predefined TFs not found in data'
+                else:
+                    common_tf_list = local_correlations.columns
+                # reshape matrix
+                local_correlations['TF'] = local_correlations.columns
+                local_correlations = local_correlations.melt(id_vars=['TF'])
+                local_correlations.columns = ['TF', 'target', 'importance']
+                local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
+                # remove if TF = target
+                local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
 
-        # reshape matrix
-        local_correlations['TF'] = local_correlations.columns
-        local_correlations = local_correlations.melt(id_vars=['TF'])
-        local_correlations.columns = ['TF', 'target', 'importance']
-        local_correlations = local_correlations[local_correlations.TF.isin(common_tf_list)]
+            elif mode == 'moran':
+                tfs_in_data = list(set(tf_list).intersection(set(data.var_names)))
+                select_genes_not_tfs = list(set(hs_genes) - set(tfs_in_data))
+                fw = flat_weights(data.obs_names, self.ind, self.weights_n, n_neighbors=n_neighbors)
+                local_correlations = global_bivariate_moran_R(data,
+                                                              fw,
+                                                              tfs_in_data,
+                                                              select_genes_not_tfs,
+                                                              num_workers=jobs,
+                                                              layer_key=layer_key)
 
-        # remove if TF = target
-        local_correlations = local_correlations[local_correlations.TF != local_correlations.target]
-
+            elif mode == 'geary':
+                tfs_in_data = list(set(tf_list).intersection(set(data.var_names)))
+                select_genes_not_tfs = list(set(hs_genes) - set(tfs_in_data))
+                fw = flat_weights(data.obs_names, self.ind, self.weights_n, n_neighbors=n_neighbors)
+                local_correlations = global_bivariate_gearys_C(data,
+                                                               fw,
+                                                               tfs_in_data,
+                                                               select_genes_not_tfs,
+                                                               num_workers=jobs,
+                                                               layer_key=layer_key)
         self.data.uns['adj'] = local_correlations
         if save_tmp:
             local_correlations.to_csv(fn, index=False)
@@ -700,6 +873,23 @@ class InferNetwork(Network):
         self.data.obsm['rep_auc_mtx'] = receptor_auc_mtx
         return receptor_auc_mtx
 
+    def isr(self) -> pd.DataFrame:
+        """"""
+        receptor_auc_mtx = self.data.obsm['rep_auc_mtx']
+        auc_mtx = self.data.obsm['auc_mtx']
+        # change receptor auc matrix column names so it can aligned with the auc matrix column names
+        col_names = receptor_auc_mtx.columns.copy()
+        col_names = [f'{i}(+)' for i in col_names]
+        receptor_auc_mtx.columns = col_names
+        # combine two dfs
+        df = pd.concat([auc_mtx, receptor_auc_mtx], axis=1)
+        # sum values
+        # isr_df = df.groupby(by=df.columns, axis=1)
+        isr_df = df.groupby(level=0, axis=1).sum()
+        self.data.obsm['isr'] = isr_df
+        return isr_df
+
+
     # ------------------------------------------------------ #
     #              step2-3: Receptors Detection              #
     # ------------------------------------------------------ #
@@ -801,3 +991,41 @@ class InferNetwork(Network):
         if save_tmp:
             with open(fn, 'w') as fp:
                 json.dump(receptor_tf, fp, sort_keys=True, indent=4)
+
+
+def save_list(l, fn='list.txt'):
+    with open(fn, 'w') as f:
+        f.write('\n'.join(l))
+
+
+def cal_isr(data) -> pd.DataFrame:
+    """"""
+    if 'isr' not in data.obsm:
+        receptor_auc_mtx = data.obsm['rep_auc_mtx']
+        auc_mtx = data.obsm['auc_mtx']
+        # change receptor auc matrix column names so it can aligned with the auc matrix column names
+        col_names = receptor_auc_mtx.columns.copy()
+        col_names = [f'{i}(+)' for i in col_names]
+        receptor_auc_mtx.columns = col_names
+        # combine two dfs
+        df = pd.concat([auc_mtx, receptor_auc_mtx], axis=1)
+        # sum values
+        isr_df = df.groupby(level=0, axis=1).sum()
+        data.obsm['isr'] = isr_df
+        return isr_df
+    else:
+        print('ISR score matrix exists')
+        return data.obsm['isr']
+
+
+def cal_isr_exp(data, regulon, receptor, weight=1):
+    regulon = f'{regulon}(+)' if '(+)' not in regulon else regulon
+    exp_mtx = data.to_df()
+    receptor_exp_mtx = exp_mtx[receptor]
+    receptor_exp_mtx = receptor_exp_mtx * weight
+    regulon_auc_mtx = data.obsm['auc_mtx'][regulon]
+    # combine regulon AUC value and receptor expression value
+    df = pd.concat([receptor_exp_mtx, regulon_auc_mtx], axis=1)
+    # sum receptor expression value
+    isr_df = df.groupby(level=0, axis=1).sum()
+    return isr_df
