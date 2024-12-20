@@ -555,12 +555,13 @@ class InferNetwork(Network):
 
     def spg(self,
             data: anndata.AnnData,
+            gene_list: Optional[List] = None,
             layer_key=None,
-            model='danb',
+            model='bernoulli',
             latent_obsm_key="spatial",
             umi_counts_obs_key=None,
             weighted_graph=False,
-            n_neighbors=30,
+            n_neighbors=10,
             fdr_threshold=0.05,
             tf_list=None,
             save_tmp=True,
@@ -578,6 +579,10 @@ class InferNetwork(Network):
         """
         Inference of co-expression modules by spatial-proximity-graph (SPG) model.
         :param data: Count matrix (shape is cells by genes)
+        :param gene_list: A list of interested genes to calculate co-expression values with TF genes.
+                Could be HVGs or all genes in the count matrix. When not provided, will compute spatial autocorrelation
+                values between all genes in the count matrix with TF genes and select interested genes with significant
+                spatial variability.
         :param layer_key: Key in adata.layers with count data, uses adata.X if None.
         :param model: Specifies the null model to use for gene expression.
             Valid choices are:
@@ -622,25 +627,28 @@ class InferNetwork(Network):
             hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
             hs_results = hs.compute_autocorrelations()
             # hs_genes = hs_results[hs_results.FDR < fdr_threshold].index
-            # 1: Select genes
-            self.spatial_autocorrelation(data,
-                                         layer_key=layer_key,
-                                         latent_obsm_key=latent_obsm_key,
-                                         n_neighbors=n_neighbors,
-                                         somde_k=somde_k,
-                                         n_processes=jobs,
-                                         local=local,
-                                         raw=raw,
-                                         cache=cache)
-            self.more_stats['FDR'] = hs_results.FDR
-            self.more_stats.to_csv('more_stats.csv', sep='\t')
-            # TODO:
-            hs_genes = self.select_genes(methods=methods,
-                                         fdr_threshold=fdr_threshold,
-                                         local=local,
-                                         combine=combine,
-                                         operation=operation)
-            hs_genes = list(hs_genes)
+            # 2024-12-20: select genes or provide a list of genes
+            if gene_list:
+                hs_genes = gene_list
+            else:
+                # 1: Select genes
+                self.spatial_autocorrelation(data,
+                                             layer_key=layer_key,
+                                             latent_obsm_key=latent_obsm_key,
+                                             n_neighbors=n_neighbors,
+                                             somde_k=somde_k,
+                                             n_processes=jobs,
+                                             local=local,
+                                             raw=raw,
+                                             cache=cache)
+                self.more_stats['FDR'] = hs_results.FDR
+                # self.more_stats.to_csv('more_stats.csv', sep='\t')
+                hs_genes = self.select_genes(methods=methods,
+                                             fdr_threshold=fdr_threshold,
+                                             local=local,
+                                             combine=combine,
+                                             operation=operation)
+                hs_genes = list(hs_genes)
 
             # 2. Define gene-gene relationships with pair-wise local correlations
             print(f'Current mode is {mode}')
@@ -888,7 +896,6 @@ class InferNetwork(Network):
         isr_df = df.groupby(level=0, axis=1).sum()
         self.data.obsm['isr'] = isr_df
         return isr_df
-
 
     # ------------------------------------------------------ #
     #              step2-3: Receptors Detection              #
