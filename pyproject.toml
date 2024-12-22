@@ -13,4 +13,4 @@ authors = [
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
 
 [tool.setuptools]
-packages = ["SSGidentification", "GCGconstruction","Regrefinement","RecTFinference","ISRscore", "OtherModules"]
+packages = ["SSGidentification", "GCGconstruction", "Regrefinement", "RecTFinference", "ISRscore", "OtherModules"]
