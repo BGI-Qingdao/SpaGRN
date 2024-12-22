@@ -17,8 +17,8 @@ needs_sphinx = '2.0'  # Nicer param docs
 suppress_warnings = ['ref.citation']
 
 # General information
-project = '4D-BioReconX'
-copyright = '2023, BGI-Qingdao'
+project = 'SpaGRN'
+copyright = '2024, BGI-Qingdao'
 author = 'xumengyang'
 version = 'v1.0.0'
 release = 'v1.0.0'
@@ -65,7 +65,7 @@ nbsphinx_execute = 'never'
 
 html_theme = 'furo'
 
-html_title = "4D-BioReconX"
+html_title = "SpaGRN"
 
 html_theme_options = {
     # "sidebar_hide_name": True,
