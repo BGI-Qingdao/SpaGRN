@@ -26,7 +26,7 @@ SpaGRN
 ========================================================
 .. rubric:: a comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.
 
-**4D-BioReconX** is a scalable and versatile framework designed to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.\
+**SpaGRN** is a scalable and versatile framework designed to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.\
 It runs based on spatial transcriptomics data, such as Stereo-seq (spatial enhanced resolution omics sequencing) data. \
 Notably, we are still working on the improvement of performance and calculation efficiency.
 
@@ -65,10 +65,10 @@ Workflow
     
 
 
-.. |docs| image:: https://img.shields.io/static/v1?label=docs&message=4d-bioreconx&color=green
-    :target: https://4d-bioreconx.readthedocs.io/en/latest/index.html
+.. |docs| image:: https://img.shields.io/static/v1?label=docs&message=spagrn&color=green
+    :target: https://spagrn.readthedocs.io/en/latest/index.html
     :alt: docs
 
-.. |stars| image:: https://img.shields.io/github/stars/BGI-Qingdao/4D-BioReconX?logo=GitHub&color=yellow
-    :target: https://github.com/BGI-Qingdao/4D-BioReconX
+.. |stars| image:: https://img.shields.io/github/stars/BGI-Qingdao/SpaGRN?logo=GitHub&color=yellow
+    :target: https://github.com/BGI-Qingdao/SpaGRN
     :alt: stars
