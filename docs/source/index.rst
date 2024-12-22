@@ -1,5 +1,5 @@
-.. 4D-BioReconX manual documentation master file, created by
-   sphinx-quickstart on Tue Sep 26 23:21:00 2023.
+.. SpaGRN manual documentation master file, created by
+   sphinx-quickstart on Sun Dec 22 23:21:00 2024.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
@@ -22,20 +22,17 @@
 
 |stars|  |docs| 
 
-
-4D-BioReconX
+SpaGRN
 ========================================================
-.. rubric:: a bioinformatic framework for reconstructing 4D spatial transcriptomics atlas and spatiotemporal analyses+
+.. rubric:: a comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.
 
-**4D-BioReconX** is a scalable and versatile framework designed to construct a comprehensive four-dimensional (4D) spatial transcriptomics atlas of whole animals at single-cell resolution. \
-This approach enables us to track the intricate spatiotemporal dependencies of morphogenetic gradients and regenerative patterning. \
+**4D-BioReconX** is a scalable and versatile framework designed to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data.\
 It runs based on spatial transcriptomics data, such as Stereo-seq (spatial enhanced resolution omics sequencing) data. \
 Notably, we are still working on the improvement of performance and calculation efficiency.
 
 
 * Get quickly started by browsing :ref:`/content/00_Installation.rst`, :ref:`/content/01_Basic_Usage.rst` or :ref:`/tutorials/index.rst`.
-* Use our planarian manuscript workflow by following :ref:`/planarianmanuscript/index.rst`.
-* Open to discuss and provide feedback on `Github <https://github.com/BGI-Qingdao/4D-BioReconX>`_.
+* Open to discuss and provide feedback on `Github <https://github.com/BGI-Qingdao/SpaGRN>`_.
 
 
 Highlights
