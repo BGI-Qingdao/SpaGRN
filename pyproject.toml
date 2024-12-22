@@ -1,0 +1,16 @@
+[build-system]
+requires = [
+    "setuptools"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SpaGRN"
+version = "1.0.0"
+authors = [
+    {name = "xumengyang", email = "xumengyang@genomics.cn"},
+]
+description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
+
+[tool.setuptools]
+packages = ["SSGidentification", "GCGconstruction","Regrefinement","RecTFinference","ISRscore", "OtherModules"]

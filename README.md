@@ -1,3 +1,7 @@
+[![stars](https://img.shields.io/github/stars/BGI-Qingdao/SpaGRN?logo=GitHub&color=yellow)](https://img.shields.io/github/stars/BGI-Qingdao/SpaGRN) 
+[![docs](https://img.shields.io/static/v1?label=docs&message=4d-bioreconx&color=green)](https://4D-bioreconx.readthedocs.io/en/latest/index.html)
+
+
 # SpaGRN
 A comprehensive tool to infer TF-centered, spatial gene regulatory networks for the spatially resolved transcriptomics (SRT) data.
 
