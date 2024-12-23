@@ -32,17 +32,17 @@ Or install by `conda`:
 	conda install -c bioconda spagrn
 	
 
-	Notice: If you install via conda, you will need to install the following dependencies separately:
+Notice: If you install via conda, you will need to install the following dependencies separately:
 
-	.. code-block:: 
+.. code-block:: 
 
-		pyscenic==0.12.1
+	pyscenic==0.12.1
 	
-		hotspotsc==1.1.1
+	hotspotsc==1.1.1
 	
-		arboreto
+	arboreto
 	
-		ctxcore>=0.2.0
+	ctxcore>=0.2.0
 
 SpaGRN can be imported as:
 
