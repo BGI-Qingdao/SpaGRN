@@ -33,7 +33,7 @@ Please use GitHub [issues](https://github.com/BGI-Qingdao/SpaGRN/issues) tracker
 
 
 ## File tree
-**To enhance clarity and prevent any potential confusion, we have organized this GitHub repository into a structured file tree, complete with detailed annotation for each code segment, tailored to their respective purposes.
+To enhance clarity and prevent any potential confusion, we have organized this GitHub repository into a structured **file tree**, complete with detailed annotation for each code segment, tailored to their respective purposes.
 
 ```
 
