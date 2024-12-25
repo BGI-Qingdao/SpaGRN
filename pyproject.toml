@@ -11,7 +11,7 @@ authors = [
     {name = "Yao LI, Lidong GUO, Mengyang XU", email = "liyao1@genomics.cn, guolidong@genomics.cn, xumengyang@genomics.cn"},
 ]
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
-readme = READ.me
+readme = README.md
 requires-python = ">=3.7,<3.11"
 license = "GPL-3.0+"
 classifiers=[
