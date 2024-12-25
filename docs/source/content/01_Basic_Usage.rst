@@ -30,6 +30,7 @@ Example workflow
 ++++++++++++++++++++++
 
 .. code-block:: 
+
 	from spagrn import InferRegulatoryNetwork as irn
 
 	if __name__ == '__main__':  #notice: to avoid concurrent bugs, please do not ignore this line!
@@ -77,21 +78,32 @@ read data from previous analysis:
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: 
+
 	data = irn.read_file('spagrn.h5ad')
+	
 	auc_mtx = data.obsm['auc_mtx']
 
 plot:
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: 
+
 	prn.auc_heatmap(data,
+	
 					auc_mtx,
+					
 					cluster_label='annotation',
+					
 					rss_fn='regulon_specificity_scores.txt',
+					
 					topn=10,
+					
 					subset=False,
+					
 					save=True,
+					
 					fn='clusters_heatmap_top10.pdf',
+					
 					legend_fn="rss_celltype_legend_top10.pdf")  
 
 .. image:: ./../_static/E14-16h_hotspot_clusters_heatmap_top5.png
