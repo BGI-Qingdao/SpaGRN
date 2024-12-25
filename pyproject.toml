@@ -38,3 +38,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["spagrn"]
 
+#[project.scripts]
+#spagrn = "spagrn.cli.spagrn_parser:main"
