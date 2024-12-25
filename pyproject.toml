@@ -1,11 +1,11 @@
 [project]
 name = "SpaGRN"
-version = "1.0.0"
+version = "1.0.7"
 authors = [
     {name = "xumengyang", email = "xumengyang@genomics.cn"},
 ]
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
-dynamic = ["scripts"]
+dynamic = ["entry-points"]
 
 [build-system]
 requires = [
@@ -17,4 +17,4 @@ build-backend = "setuptools.build_meta"
 packages = ["spagrn"]
 
 [tool.setuptools.dynamic]
-scripts = {file = ["spagrn.cli.spagrn_parser:main"]}
+entry-points = {file = ["spagrn.cli.spagrn_parser:main"]}
