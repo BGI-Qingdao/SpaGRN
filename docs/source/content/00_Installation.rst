@@ -37,11 +37,8 @@ Notice: If you install via conda, you will need to install the following depende
 .. code-block:: 
 
 	pyscenic==0.12.1
-	
 	hotspotsc==1.1.1
-	
 	arboreto
-	
 	ctxcore>=0.2.0
 
 SpaGRN can be imported as:
@@ -58,31 +55,18 @@ Dependencies:
 .. code-block:: 
 
 	anndata==0.8.0
-	
 	pandas<2.0.0,>=1.3.4
-
 	scanpy==1.9.1
-
 	seaborn
-
 	matplotlib 
-
 	pyscenic==0.12.1
-
 	hotspotsc==1.1.1
-
 	scipy
-
 	numpy
-
 	dask
-
 	arboreto
-
 	ctxcore>=0.2.0
-
 	scikit-learn
-
 
 	
 Development Mode
@@ -104,11 +88,13 @@ Troubleshooting
 
 Possible installation failed due to some factors:
 
-    Version of Python
+Version of Python
+++++++++++++++++++++++++
 
 Make sure you are working on Python3.8.
 
-    Conflicts of dependencies
+Conflicts of dependencies
+++++++++++++++++++++++++
 
 Find out packages that lead to failures, then create a new requirements.txt of them and run:
 

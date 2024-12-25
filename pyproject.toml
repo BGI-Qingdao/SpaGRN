@@ -1,11 +1,33 @@
 [project]
-name = "SpaGRN"
+name = "spagrn"
 version = "1.0.7"
 authors = [
-    {name = "xumengyang", email = "xumengyang@genomics.cn"},
+    {name = "Yao LI, Lidong GUO, Mengyang XU", email = "liyao1@genomics.cn, guolidong@genomics.cn, xumengyang@genomics.cn"},
 ]
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
-dynamic = ["entry-points"]
+readme = README.md
+requires-python = ">=3.7,<3.11"
+license = "GPL-3.0+"
+classifiers=[
+	"Programming Language :: Python :: 3",
+	"License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+	"Operating System :: OS Independent",
+]
+dependencies = [
+	"anndata==0.8.0", 
+	"pandas<2.0.0,>=1.3.4", 
+	"scanpy==1.9.1", 
+	"seaborn", 
+	"matplotlib", 
+	"pyscenic==0.12.1", 
+	"hotspotsc==1.1.1", 
+	"scipy", 
+	"numpy", 
+	"dask", 
+	"arboreto", 
+	"ctxcore>=0.2.0", 
+	"scikit-learn"
+]
 
 [build-system]
 requires = [
@@ -16,5 +38,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["spagrn"]
 
-[tool.setuptools.dynamic]
-entry-points = {file = ["spagrn.cli.spagrn_parser:main"]}
+[project.scripts]
+spagrn = "spagrn.cli.spagrn_parser:main"
