@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools"
+    "setuptools", "wheel"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -16,4 +16,4 @@ description = "A comprehensive tool to infer TF-centred, spatial gene regulatory
 packages = ["spagrn"]
 
 [tool.setuptools.dynamic]
-scripts = ['spagrn = spagrn.cli.spagrn_parser:main']
+entry-points = ['spagrn = spagrn.cli.spagrn_parser:main']
