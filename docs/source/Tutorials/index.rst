@@ -4,12 +4,12 @@ This section consists of various cases which will make you familiar with the pro
 
 .. card:: data1
     :octicon:`book;1em;`
-    :link: Preprocess
+    :link: data1
     :link-type: doc
 
     This section contains a Whole-Animal reconstruction pipeline using 2D multimodal registration, Cell segmentation, Clustering, and Annotation to integrate the series of Stereo-seq slices and obtain comprehensive 3D anatomic and molecular profiles.
 
-.. card:: SPC analysis
+.. card:: data2
     :octicon:`book;1em;`
     :link: data2
     :link-type: doc

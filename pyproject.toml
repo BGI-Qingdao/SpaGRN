@@ -14,3 +14,6 @@ description = "A comprehensive tool to infer TF-centred, spatial gene regulatory
 
 [tool.setuptools]
 packages = ["spagrn"]
+
+[tool.setuptools.dynamic]
+scripts = ['spagrn = spagrn.cli.spagrn_parser:main']
