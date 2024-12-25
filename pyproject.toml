@@ -5,7 +5,7 @@ authors = [
     {name = "xumengyang", email = "xumengyang@genomics.cn"},
 ]
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
-dynamic = ["spagrn"]
+dynamic = ["scripts"]
 
 [build-system]
 requires = [
@@ -17,4 +17,4 @@ build-backend = "setuptools.build_meta"
 packages = ["spagrn"]
 
 [tool.setuptools.dynamic]
-spagrn = {entry-points = "spagrn.cli.spagrn_parser:main"}
+scripts = {file = ["spagrn.cli.spagrn_parser:main"]}
