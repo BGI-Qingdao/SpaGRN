@@ -1,9 +1,3 @@
-[build-system]
-requires = [
-    "setuptools", "wheel"
-]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "SpaGRN"
 version = "1.0.0"
@@ -11,9 +5,16 @@ authors = [
     {name = "xumengyang", email = "xumengyang@genomics.cn"},
 ]
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
+dynamic = ["spagrn"]
+
+[build-system]
+requires = [
+    "setuptools", "wheel"
+]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["spagrn"]
 
 [tool.setuptools.dynamic]
-entry-points = ['spagrn = spagrn.cli.spagrn_parser:main']
+spagrn = {entry-points = "spagrn.cli.spagrn_parser:main"}
