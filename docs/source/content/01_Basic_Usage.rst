@@ -52,22 +52,22 @@ Example workflow
 		
 		# run main pipeline
 		grn.infer(database_fn,
-						motif_anno_fn,
-						tfs_fn,
-						niche_df=niches,
-				  	  num_workers=cpu_count(),
-				  	  cache=False,
-				 	  save_tmp=True,
-				 	  c_threshold=0.2,
-				 	  layers=None,
-				 	  latent_obsm_key='spatial',
-				 	  model='danb',
-				 	  n_neighbors=30,
-				 	  weighted_graph=False,
-				 	  cluster_label='celltype',
-				 	  method='spg',
-				 	  prefix='project',
-				 	  noweights=False)
+				motif_anno_fn,
+				tfs_fn,
+				niche_df=niches,
+				num_workers=cpu_count(),
+				cache=False,
+				save_tmp=True,
+				c_threshold=0.2,
+				layers=None,
+				latent_obsm_key='spatial',
+				model='danb',
+				n_neighbors=30,
+				weighted_graph=False,
+				cluster_label='celltype',
+				method='spg',
+				prefix='project',
+				noweights=False)
 
 All results will be save in a h5ad file, default file name is `spagrn.h5ad`.
 
@@ -95,14 +95,14 @@ plot:
 .. code-block:: 
 
 	prn.auc_heatmap(data,
-					auc_mtx,
-					cluster_label='annotation',
-					rss_fn='regulon_specificity_scores.txt',
-					topn=10,
-					subset=False,
-					save=True,
-					fn='clusters_heatmap_top10.pdf',
-					legend_fn="rss_celltype_legend_top10.pdf")  
+				auc_mtx,
+				cluster_label='annotation',
+				rss_fn='regulon_specificity_scores.txt',
+				topn=10,
+				subset=False,
+				save=True,
+				fn='clusters_heatmap_top10.pdf',
+				legend_fn="rss_celltype_legend_top10.pdf")  
 
 .. image:: ./../_static/E14-16h_hotspot_clusters_heatmap_top5.png
     :alt: Title figure
