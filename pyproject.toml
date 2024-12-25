@@ -38,3 +38,6 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["spagrn"]
+
+[project.scripts]
+spagrn = "spagrn.cli.spagrn_parser:main"
