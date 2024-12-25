@@ -34,64 +34,40 @@ Example workflow
 	from spagrn import InferRegulatoryNetwork as irn
 
 	if __name__ == '__main__':  #notice: to avoid concurrent bugs, please do not ignore this line!
-	
 		database_fn='mouse.feather'
-		
 		motif_anno_fn='mouse.tbl'
-		
 		tfs_fn='mouse_TFs.txt'
 		
 		# load Ligand-receptor data
-		
 		niches = pd.read_csv('niches.csv')
 		
 		# Load data
-		
 		data = irn.read_file('data.h5ad')
 		
 		# Preprocess data
-		
 		data = irn.preprocess(data)
 		
 		# Initialize gene regulatory network
-		
 		grn = irn(data)
 		
 		# run main pipeline
-		
 		grn.infer(database_fn,
-		
-				  motif_anno_fn,
-				  
-				  tfs_fn,
-				  
-				  niche_df=niches,
-				  
-				  num_workers=cpu_count(),
-				  
-				  cache=False,
-				  
-				  save_tmp=True,
-				  
-				  c_threshold=0.2,
-				  
-				  layers=None,
-				  
-				  latent_obsm_key='spatial',
-				  
-				  model='danb',
-				  
-				  n_neighbors=30,
-				  
-				  weighted_graph=False,
-				  
-				  cluster_label='celltype',
-				  
-				  method='spg',
-				  
-				  prefix='project',
-				  
-				  noweights=False)
+						motif_anno_fn,
+						tfs_fn,
+						niche_df=niches,
+				  	  num_workers=cpu_count(),
+				  	  cache=False,
+				 	  save_tmp=True,
+				 	  c_threshold=0.2,
+				 	  layers=None,
+				 	  latent_obsm_key='spatial',
+				 	  model='danb',
+				 	  n_neighbors=30,
+				 	  weighted_graph=False,
+				 	  cluster_label='celltype',
+				 	  method='spg',
+				 	  prefix='project',
+				 	  noweights=False)
 
 All results will be save in a h5ad file, default file name is `spagrn.h5ad`.
 
@@ -112,27 +88,20 @@ read data from previous analysis:
 	
 	auc_mtx = data.obsm['auc_mtx']
 
+
 plot:
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: 
 
 	prn.auc_heatmap(data,
-	
 					auc_mtx,
-					
 					cluster_label='annotation',
-					
 					rss_fn='regulon_specificity_scores.txt',
-					
 					topn=10,
-					
 					subset=False,
-					
 					save=True,
-					
 					fn='clusters_heatmap_top10.pdf',
-					
 					legend_fn="rss_celltype_legend_top10.pdf")  
 
 .. image:: ./../_static/E14-16h_hotspot_clusters_heatmap_top5.png
