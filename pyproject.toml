@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 name = "spagrn"
 version = "1.0.7"
 authors = [
-    {name = "Yao LI, Lidong GUO, Mengyang XU", email = "liyao1@genomics.cn, guolidong@genomics.cn, xumengyang@genomics.cn"},
+    {name = "Yao LI", email = "liyao1@genomics.cn"},
 ]
 description = "A comprehensive tool to infer TF-centred, spatial gene regulatory networks for the spatially resolved transcriptomic data."
 
