@@ -100,6 +100,27 @@ def neighbors_and_weights(data,
     return ind, neighbors, weights
 
 
+def get_neighbor_weight_matrix(df):
+    """
+    3 columns weight matrix, first column is cell, second column is neighbor cells, third column is weight values.
+    Create {cell: [neighbors]} index dictionary
+    and {cell: [weights]} value dictionary
+    :param df:
+    :return: neighbor index dict and neighbor weight dict for pysal.lib to create a weights.W object.
+    """
+    unique_cells = sorted(df['Cell_x'].unique())
+    cell_to_index = {cell: idx for idx, cell in enumerate(unique_cells)}
+
+    df['Cell_x'] = df['Cell_x'].map(cell_to_index)
+    df['Cell_y'] = df['Cell_y'].map(cell_to_index)
+
+    nei_dict = (df.groupby('Cell_x')['Cell_y'].apply(list).to_dict())
+
+    weights_grouped = df.groupby('Cell_x')['Weight'].apply(list).to_dict()
+    w_dict = {cell: weights_grouped[cell] for cell in nei_dict}
+    return nei_dict, w_dict
+
+
 def get_w(ind, weights_n):
     """Create a Weight object for esda program"""
     nind = pd.DataFrame(data=ind)
@@ -219,237 +240,6 @@ def cal_k(adata, gene_x_id, n):
     numerator = n * np.sum(np.power(gene_x_exp - gene_x_exp_mean, 4))
     K = numerator / denominator
     return K
-
-
-# -----------------------------------------------------#
-# Getis Ord General G
-# -----------------------------------------------------#
-def _getis_g(x, w):
-    x = np.asarray(x)
-    w = np.asarray(w)
-    numerator = np.sum(np.sum(w * np.outer(x, x)))
-    denominator = np.sum(np.outer(x, x))
-    G = numerator / denominator
-    return G
-
-
-def _getis_g_p_value_one_gene(G, w, x):
-    n = w.shape[0]
-    s0 = cal_s0(w)
-    s02 = s0 * s0
-    s1 = cal_s1(w)
-    b0 = (n2 - 3 * n + 3) * s1 - n * s2 + 3 * s02
-    b1 = (-1.0) * ((n2 - n) * s1 - 2 * n * s2 + 6 * s02)
-    b2 = (-1.0) * (2 * n * s1 - (n + 3) * s2 + 6 * s02)
-    b3 = 4 * (n - 1) * s1 - 2 * (n + 1) * s2 + 8 * s02
-    b4 = s1 - s2 + s02
-    EG = s0 / (n * (n - 1))
-    numerator = b0 * (np.square(np.sum(x ** 2))) + b1 * np.sum(np.power(x, 4)) + b2 * np.square(np.sum(x)) * np.sum(
-        x ** 2) + b3 * np.sum(x) * np.sum(np.power(x, 3)) + b4 * np.power(np.sum(x), 4)
-    denominator = np.square((np.square(np.sum(x)) - np.sum(x ** 2))) * n * (n - 1) * (n - 2) * (n - 3)
-    VG = numerator / denominator - np.square(EG)
-    Z = (G - EG) / np.sqrt(VG)
-    p_value = 1 - norm.cdf(Z)
-    # print(f'G: {G}\nVG: {VG}\nZ: {Z}\np_value: {p_value}')
-    return p_value
-
-
-def getis_g_p_values_one_gene(gene_expression_matrix, gene_x_id, w):
-    g = G(gene_expression_matrix[:, gene_x_id], w)
-    return g.p_norm
-
-
-# parallel computing
-def _compute_g_for_gene(args):
-    gene_expression_matrix, gene_x_id, w = args
-    # Gp = getis_g_p_values_one_gene(adata, gene_x_id, ind, weights_n, layer_key)
-    # Gp = getis_g_p_values_one_gene(gene_expression_matrix, gene_x_id, w)
-    g = G(gene_expression_matrix[:, gene_x_id], w)
-    print(f'gene{gene_x_id}: p_value: {g.p_norm}')
-    return g.p_norm
-
-
-def _getis_g_parallel(gene_expression_matrix, w, n_genes, n_processes=None):
-    # pool_args = [(adata, gene_x_id, ind, weights_n, layer_key) for gene_x_id in range(n_genes)]
-    pool_args = [(gene_expression_matrix, gene_x_id, w) for gene_x_id in range(n_genes)]
-    with multiprocessing.Pool(processes=n_processes) as pool:
-        Gp_values = pool.map(_compute_g_for_gene, pool_args)
-    return np.array(Gp_values)
-
-
-def getis_g_p_values(adata: ad.AnnData,
-                     Weights,
-                     n_processes=None,
-                     layer_key=None):
-    """
-    Calculate getis ord general g for all genes and return getis_g_p_values values as a numpy.array
-    :param adata: data containing gene expression matrix and cell-feature spatial coordinates array
-    :param layer_key: layer key storing target gene expression matrix. if not provided, use raw counts adata.X as input
-    :param n_processes: number of jobs when computing parallelly
-    :return: (numpy.array) dimension: (n_genes, )
-    """
-    n_genes = len(adata.var_names)
-    # w = get_w(ind, weights_n)
-    if layer_key:
-        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
-    else:
-        gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
-    # if n_processes:
-    p_values = _getis_g_parallel(gene_expression_matrix, Weights, n_genes, n_processes=n_processes)
-    # else:
-    #     p_values = []
-    #     for gene_x_id, gene_name in enumerate(adata.var_names):
-    #         p_value = getis_g_p_value_one_gene(adata, gene_x_id, ind, weights_n)
-    #         p_values.append(p_value)
-    #     p_values = np.array(p_values)
-    return p_values
-
-
-# -----------------------------------------------------#
-# M's I
-# -----------------------------------------------------#
-def _morans_i(adata, weights, layer_key='raw_counts'):
-    if 'connectivities' not in adata.obsp.keys():
-        adata.obsp['connectivities'] = weights
-    morans_i_array = sc.metrics.morans_i(adata, layer=layer_key)
-    # shape: (n_genes, )
-    return morans_i_array
-
-
-def _morans_i_p_value_one_gene(adata, gene_x_id, weights, morans_i_array):
-    I = morans_i_array[gene_x_id]  # moran's I stats for the gene
-    n = len(adata.obs_names)  # number of cells
-    EI = -1 / (n - 1)  # Moran’s I expected value
-    K = cal_k(adata, gene_x_id, n)
-    S0 = cal_s0(weights)
-    S1 = cal_s1(weights)
-    S2 = cal_s2(weights)
-    # Variance
-    part1 = (n * (S1 * (n ** 2 - 3 * n + 3) - n * S2 + 3 * np.square(S0))) / (
-            (n - 1) * (n - 2) * (n - 3) * np.square(S0))
-    part2 = (K * (S1 * (n ** 2 - n) - 2 * n * S2 + 6 * np.square(S0))) / ((n - 1) * (n - 2) * (n - 3) * np.square(S0))
-    VI = part1 - part2 - np.square(EI)
-    stdI = np.sqrt(VI)
-    # Z score
-    Z = (I - EI) / stdI
-    # Perform one-tail test one z score
-    p_value = 1 - norm.cdf(Z)  # right tail
-    return p_value
-
-
-def morans_i_p_value_one_gene(x, w):
-    i = Moran(x, w)
-    return i.p_norm
-
-
-# parallel computing
-def _compute_i_for_gene(args):
-    x, w = args
-    Ip = morans_i_p_value_one_gene(x, w)
-    return Ip
-
-
-def _morans_i_parallel(n_genes, gene_expression_matrix, w, n_processes=None):
-    pool_args = [(gene_expression_matrix[:, gene_x_id], w) for gene_x_id in range(n_genes)]
-    with multiprocessing.Pool(processes=n_processes) as pool:
-        p_values = pool.map(_compute_i_for_gene, pool_args)
-    return np.array(p_values)
-
-
-def morans_i_p_values(adata, Weights, layer_key='raw_counts', n_process=None):
-    """
-    Calculate Moran’s I Global Autocorrelation Statistic and its adjusted p-value
-    :param adata: Anndata
-    :param Weights:
-    :param layer_key:
-    :param n_process:
-    :return:
-    """
-    n_genes = len(adata.var_names)
-    # nind = pd.DataFrame(data=ind)
-    # nei = nind.transpose().to_dict('list')
-    # w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
-    # w = weights.W(nei, weights=w_dict)
-    # w = get_w(ind, weights_n)
-    if layer_key:
-        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
-    else:
-        gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
-    p_values = _morans_i_parallel(n_genes, gene_expression_matrix, Weights, n_processes=n_process)
-    return p_values
-
-
-# -----------------------------------------------------#
-# G's C
-# -----------------------------------------------------#
-def _gearys_c(adata, weights, layer_key='raw_counts'):
-    if 'connectivities' not in adata.obsp.keys():
-        adata.obsp['connectivities'] = weights
-    gearys_c_array = sc.metrics.gearys_c(adata, layer=layer_key)
-    # shape: (n_genes, )
-    return gearys_c_array
-
-
-def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
-    C = gearys_c_array[gene_x_id]
-    n = len(adata.obs_names)
-    EC = 1
-    K = cal_k(adata, gene_x_id, n)
-    S0 = cal_s0(weights)
-    S1 = cal_s1(weights)
-    S2 = cal_s2(weights)
-    part1 = (n - 1) * S1 * (n ** 2 - 3 * n + 3 - K * (n - 1)) / (np.square(S0) * n * (n - 2) * (n - 3))
-    part2 = (n ** 2 - 3 - K * np.square(n - 1)) / (n * (n - 2) * (n - 3))
-    part3 = (n - 1) * S2 * (n ** 2 + 3 * n - 6 - K * (n ** 2 - n + 2)) / (4 * n * (n - 2) * (n - 3) * np.square(S0))
-    VC = part1 + part2 - part3
-    # variance = (2 * (n ** 2) * S1 - n * S2 + 3 * (S0 ** 2)) / (S0 ** 2 * (n - 1) * (n - 2) * (n - 3))
-    VC_norm = (1 / (2 * (n + 1) * S0 ** 2)) * ((2 * S1 + S2) * (n - 1) - 4 * S0 ** 2)
-    Z = (C - EC) / np.sqrt(VC_norm)
-    p_value = 1 - norm.cdf(Z)
-    print(f'C: {C}\nVC: {VC}\nVC_norm: {VC_norm}\nZ: {Z}\np_value: {p_value}')
-    return p_value
-
-
-def gearys_c_p_value_one_gene(x, w):
-    c = Geary(x, w)
-    return c.p_norm
-
-
-# parallel computing
-def _compute_c_for_gene(args):
-    x, w = args
-    Cp = gearys_c_p_value_one_gene(x, w)
-    return Cp
-
-
-def _gearys_c_parallel(n_genes, gene_expression_matrix, w, n_processes=None):
-    pool_args = [(gene_expression_matrix[:, gene_x_id], w) for gene_x_id in range(n_genes)]
-    with multiprocessing.Pool(processes=n_processes) as pool:
-        p_values = pool.map(_compute_c_for_gene, pool_args)
-    return np.array(p_values)
-
-
-def gearys_c_p_values(adata, Weights, layer_key='raw_counts', n_process=None):
-    """
-    Main function to calculate Geary's C and its p-values
-    :param adata:
-    :param Weights:
-    :param layer_key:
-    :param n_process:
-    :return:
-    """
-    n_genes = len(adata.var_names)
-    # nind = pd.DataFrame(data=ind)
-    # nei = nind.transpose().to_dict('list')
-    # w_dict = weights_n.reset_index(drop=True).transpose().to_dict('list')
-    # w = weights.W(nei, weights=w_dict)
-    # w = get_w(ind, weights_n)
-    if layer_key:
-        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
-    else:
-        gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
-    p_values = _gearys_c_parallel(n_genes, gene_expression_matrix, Weights, n_processes=n_process)
-    return p_values
 
 
 # -----------------------------------------------------#
