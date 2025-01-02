@@ -129,11 +129,10 @@ class InferNetwork(Network):
     Algorithms to infer Gene Regulatory Networks (GRNs)
     """
 
-    def __init__(self, adata=None, pos_label='spatial', prefix=None):
+    def __init__(self, adata=None):
         """
         Constructor of this Object.
-        :param data:
-        :param pos_label: pos key in obsm, default 'spatial'. Only used if data is Anndata. 
+        :param data: sequencing data in AnnData format
         :return:
         """
         super().__init__()
@@ -144,8 +143,6 @@ class InferNetwork(Network):
         self.weights = None
         self.ind = None
         self.weights_n = None
-
-        self.prefix = prefix
 
         # other settings
         self._params = {
@@ -181,7 +178,6 @@ class InferNetwork(Network):
               local=False,
               methods=None,
               operation='intersection',
-              raw=True,
               combine=False,
               mode='moran',
               somde_k=20,
@@ -222,7 +218,6 @@ class InferNetwork(Network):
                                local=local,
                                methods=methods,
                                operation=operation,
-                               raw=raw,
                                combine=combine,
                                mode=mode,
                                somde_k=somde_k)
@@ -286,7 +281,7 @@ class InferNetwork(Network):
 
     def add_params(self, dic: dict):
         """
-        :param dic:
+        :param dic: keys are parameter name, values are parameter values
 
         Example:
             grn = InferNetwork(data)
@@ -505,7 +500,7 @@ class InferNetwork(Network):
             somde_genes = self.more_stats.loc[self.more_stats.FDR_SOMDE < fdr_threshold].index
             print(f'SOMDE find {len(somde_genes)} genes')
             # TODO: 2024-08-06: only use local genes
-            save_list(somde_genes, 'local_genes.txt')
+            # save_list(somde_genes, 'local_genes.txt')
             return somde_genes
         # 2. GLOBAL
         # 2.1 combine p-values
@@ -514,7 +509,7 @@ class InferNetwork(Network):
             self.more_stats['combined'] = cfdrs
             genes = self.more_stats.loc[self.more_stats['combined'] < fdr_threshold].index
             print(f"Combinded FDRs gives: {len(cgenes)} genes")
-            save_list(genes, 'combined_fdr_genes.txt')
+            # save_list(genes, 'combined_fdr_genes.txt')
             return genes
         # 2.2 individual p-values
         elif methods:
@@ -522,12 +517,12 @@ class InferNetwork(Network):
             if operation == 'intersection':
                 global_inter_genes = set.intersection(*indices_list)
                 print(f'global spatial gene num (intersection): {len(global_inter_genes)}')
-                save_list(global_inter_genes, f'global_genes_{len(methods)}methods_inter.txt')
+                # save_list(global_inter_genes, f'global_genes_{len(methods)}methods_inter.txt')
                 return global_inter_genes
             elif operation == 'union':
                 global_union_genes = set().union(*indices_list)
                 print(f'global spatial gene num (union): {len(global_union_genes)}')
-                save_list(global_union_genes, f'global_genes_{len(methods)}methods_union.txt')
+                # save_list(global_union_genes, f'global_genes_{len(methods)}methods_union.txt')
                 return global_union_genes
 
     @staticmethod
