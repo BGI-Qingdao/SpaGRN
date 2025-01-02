@@ -557,7 +557,6 @@ class InferNetwork(Network):
             local=False,
             methods=None,
             operation='intersection',
-            raw=True,
             combine=True,
             somde_k=20,
             fn: str = 'adj.csv',
@@ -626,7 +625,6 @@ class InferNetwork(Network):
                                              somde_k=somde_k,
                                              n_processes=jobs,
                                              local=local,
-                                             raw=raw,
                                              cache=cache)
                 self.more_stats['FDR'] = hs_results.FDR
                 # self.more_stats.to_csv('more_stats.csv', sep='\t')
