@@ -298,294 +298,294 @@ def view(som, raw=True, c=False, line=False):
 # -----------------------------------------------------#
 # Main
 # -----------------------------------------------------#
-def spatial_autocorrelation(adata,
-                            layer_key="raw_counts",
-                            latent_obsm_key="spatial",
-                            n_neighbors=10,
-                            somde_k=20,
-                            n_processes=None,
-                            prefix='',
-                            output_dir='.'):
-    """
-    Calculate spatial autocorrelation values using Moran's I, Geary'C, Getis's G and SOMDE algorithms
-    :param adata:
-    :param layer_key:
-    :param latent_obsm_key:
-    :param n_neighbors:
-    :param somde_k:
-    :param n_processes:
-    :param prefix:
-    :param output_dir:
-    :return:
-    """
-    print('Computing spatial weights matrix...')
-    sc.pp.filter_cells(adata, min_genes=100)
-    ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key, n_neighbors=n_neighbors)
-    Weights = get_w(ind, weights_n)
-    print("Computing Moran's I...")
-    # morans_ps = morans_i_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
-    # # np.savetxt(f'{output_dir}/{prefix}_morans_ps.txt', morans_ps)
-    # fdr_morans_ps = fdr(morans_ps)
-    # # np.savetxt(f'{output_dir}/{prefix}_fdr_morans_ps.txt', fdr_morans_ps)
-    # print("Computing Geary's C...")
-    # gearys_cs = gearys_c_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
-    # # np.savetxt(f'{output_dir}/{prefix}_gearys_cs.txt', gearys_cs)
-    # fdr_gearys_cs = fdr(gearys_cs)
-    # # np.savetxt(f'{output_dir}/{prefix}_fdr_gearys_cs.txt', fdr_gearys_cs)
-    # print("Computing Getis G...")
-    getis_gs = getis_g_p_values(adata, Weights, n_processes=n_processes, layer_key=layer_key)
-    np.savetxt(f'{output_dir}/{prefix}_getis_gs.txt', getis_gs)
-    # fdr_getis_gs = fdr(getis_gs)
-    # np.savetxt(f'{output_dir}/{prefix}_fdr_getis_gs.txt', fdr_getis_gs)
-    morans_ps = np.loadtxt(f'{output_dir}/{prefix}_morans_ps.txt')
-    fdr_morans_ps = np.loadtxt(f'{output_dir}/{prefix}_fdr_morans_ps.txt')
-    gearys_cs = np.loadtxt(f'{output_dir}/{prefix}_gearys_cs.txt')
-    fdr_gearys_cs = np.loadtxt(f'{output_dir}/{prefix}_fdr_gearys_cs.txt')
-    # getis_gs = np.loadtxt(f'{output_dir}/{prefix}_getis_gs.txt')
-    # fdr_getis_gs = np.loadtxt(f'{output_dir}/{prefix}_fdr_getis_gs.txt')
-    print('Computing SOMDE...')
-    adjusted_p_values = somde_p_values(adata, k=somde_k, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
-    # np.savetxt(f'{output_dir}/{prefix}_fdr_SOMDE.txt', adjusted_p_values)
-    more_stats = pd.DataFrame({
-        'C': gearys_cs,
-        'FDR_C': fdr_gearys_cs,
-        'I': morans_ps,
-        'FDR_I': fdr_morans_ps,
-        'G': getis_gs,
-        'FDR_G': fdr_getis_gs,
-        'FDR_SOMDE': adjusted_p_values
-    }, index=adata.var_names)
-    more_stats.to_csv(f'{output_dir}/{prefix}_more_stats.csv', sep='\t')
-    return more_stats
-
-
-def combind_fdrs(pvalue_df, method='fisher') -> np.array:
-    """method options are {}"""
-    from scipy.stats import combine_pvalues
-    combined = np.apply_along_axis(combine_pvalues, 1, pvalue_df, method=method)[:, 1]
-    return combined  # shape (n_gene, )
-
-
-def preprocess(adata: ad.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000):
-    adata.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
-    # # find mito genes
-    sc.pp.ﬁlter_cells(adata, min_genes=0)
-    # add the total counts per cell as observations-annotation to adata
-    adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
-    # ﬁltering with basic thresholds for genes and cells
-    sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
-    sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
-    sc.pp.ﬁlter_genes(adata, min_counts=min_counts)
-    adata = adata[adata.obs['n_genes'] < max_gene_num, :]
-    return adata
-
-
-def hot(data, layer_key="raw_counts", latent_obsm_key="spatial"):
-    import hotspot
-    hs = hotspot.Hotspot(data,
-                         layer_key=layer_key,
-                         model='bernoulli',
-                         latent_obsm_key=latent_obsm_key)
-    hs.create_knn_graph(weighted_graph=False, n_neighbors=10)
-    hs_results = hs.compute_autocorrelations()
-    return hs, hs_results
-
-
-def select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=True):
-    """
-    Select genes...
-    :param more_stats:
-    :param hs_results:
-    :param fdr_threshold:
-    :param combine: To select genes, combine p-values then choose genes have
-    :return:
-    """
-    # if combine:
-    more_stats['FDR'] = hs_results.FDR
-    cfdrs = combind_fdrs(more_stats[['FDR_C', 'FDR_I', 'FDR_G', 'FDR_SOMDE', 'FDR']])
-    more_stats['combined'] = cfdrs
-    cgenes = more_stats.loc[more_stats['combined'] < fdr_threshold].index
-    print(f"Combinded FDRs gives: {len(cgenes)} genes")  # 6961
-    # return genes
-    # else:
-    moran_genes = more_stats.loc[more_stats.FDR_I < fdr_threshold].index
-    geary_genes = more_stats.loc[more_stats.FDR_C < fdr_threshold].index
-    getis_genes = more_stats.loc[more_stats.FDR_G < fdr_threshold].index
-    somde_genes = more_stats.loc[more_stats.FDR_SOMDE < fdr_threshold].index
-    hs_genes = hs_results.loc[(hs_results.FDR < fdr_threshold)].index
-    inter_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes), set(somde_genes))
-    print(f"Moran's I find {len(moran_genes)} genes")  # 3860
-    print(f"Geary's C find {len(geary_genes)} genes")  # 7063
-    print(f'getis find {len(getis_genes)} genes')  # 4285
-    print(f'SOMDE find {len(somde_genes)} genes')  # 2593
-    print(f'intersection gene num: {len(inter_genes)}')  # 3416
-    # check somde results
-    t = set(somde_genes).intersection(set(hs_genes))
-    print(f'SOMDE genes {len(t)} in hs_genes')
-    # select
-    genes = inter_genes.intersection(set(hs_genes))
-    print(f'4 methods: inter_genes intersection with FDR genes: {len(genes)}')
-    global_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes)).intersection(set(hs_genes))
-    print(f'Global inter_genes intersection with FDR genes: {len(genes)}')  # 2728
-    return genes
-
-
-def main(prefix,
-         fn,
-         output_dir,
-         n_process=4,
-         min_genes=0,
-         min_cells=3,
-         min_counts=1,
-         layer_key=None,
-         latent_obsm_key="spatial",
-         n_neighbors=10,
-         somde_k=20):
-    """
-    Main function to calculate spatial autocorrelation values for genes
-    :param prefix: project name
-    :param fn: h5ad file name
-    :param output_dir: output directory
-    :param n_process: number of processes when computing in parallel
-    :param min_genes: filter cells
-    :param min_cells: filter genes
-    :param min_counts: filter genes
-    :param layer_key: layers containing gene expression matrix
-    :param latent_obsm_key: key stored cell/spot spatial coordinates
-    :param n_neighbors: number of neighbors when building KNN
-    :param somde_k: number of neighbors when using SOMDE model
-    :return:
-    """
-    adata = sc.read_h5ad(fn)
-    adata = preprocess(adata, min_genes=min_genes, min_cells=min_cells, min_counts=min_counts)
-    # ---- HOTSPOT autocorrelation
-    hs, hs_results = hot(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
-    # Select genes
-    more_stats = spatial_autocorrelation(adata,
-                                         layer_key=layer_key,
-                                         latent_obsm_key=latent_obsm_key,
-                                         n_neighbors=n_neighbors,
-                                         somde_k=somde_k,
-                                         n_processes=n_process,
-                                         prefix=prefix,
-                                         output_dir=output_dir)
-    select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=False)
-
-
-if __name__ == '__main__':
-    project_id = sys.argv[1]
-    # 1. E14-16h
-    # more_stats = spatial_autocorrelation(sub_adata,
-    #                                      layer_key="raw_counts",
-    #                                      latent_obsm_key="spatial",
-    #                                      n_neighbors=10,
-    #                                      somde_k=20,
-    #                                      n_processes=None,
-    #                                      prefix='',
-    #                                      output_dir='.')
-    # select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=False)
-    if project_id == 'E14':
-        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E14-16h_pca.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h'
-        prefix = 'E14-16h'
-        print(f'Running for {prefix} project...')
-        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts",latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
-    elif project_id == 'E16':
-        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E16-18h_pca.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E16-18h'
-        prefix = 'E16-18h'
-        print(f'Running for {prefix} project...')
-        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-    elif project_id == 'L1':
-        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L1_pca.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L1'
-        prefix = 'L1'
-        print(f'Running for {prefix} project...')
-        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-    elif project_id == 'L2':
-        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L2_pca.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L2'
-        prefix = 'L2'
-        print(f'Running for {prefix} project...')
-        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-    elif project_id == 'L3':
-        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L3_pca.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L3'
-        prefix = 'L3'
-        print(f'Running for {prefix} project...')
-        main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-
-    project_id = int(project_id)
-    # 1. dryad.8t8s248, MERFISH, 2024-07-16
-    # mouse brain, preoptic region
-    if project_id == 1:
-        fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish/Moffitt_and_Bambah-Mukku_et_al_merfish_all_cells.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish'
-        prefix = 'merfish'
-        print(f'Running for {prefix} project...')
-        main(prefix, fn, output_dir, n_process=20, layer_key=None,latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
-
-    # 2. zenodo.7551712, 10X Visium, human colorectal cancer (CRC)
-    # 7 individuals; two samples per patient
-    # GRN: using known TF-target interactions from DoRothEA
-    # GRCh38
-    elif project_id == 2:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_BelgianCohort/sp.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/2.zenodo.7551712_BelgianCohort'
-        prefix = 'zenodo.7551712_BelgianCohort'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None, latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-    elif project_id == 3:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_KoreanCohort/sp.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/3.zenodo.7551712_KoreanCohort'
-        prefix = 'zenodo.7551712_KoreanCohort'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
-             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-    elif project_id == 4:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/4.zenodo.7551712_LiverMetastasis'
-        prefix = 'zenodo.7551712_LiverMetastasis'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
-             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-
-    # 3. human ovarian tumour
-    # 10X Visium (GSE211956) & CosMx (zenodo.8287970)
-    # High-grade serous ovarian tumours from 10 patients diagnosed with stage III-IV cancers
-    elif project_id == 5:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/5.zenodo.7551712_LiverMetastasis'
-        prefix = 'zenodo.7551712_LiverMetastasis'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
-             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-    elif project_id == 6:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/5.zenodo.7551712_LiverMetastasis'
-        prefix = 'zenodo.7551712_LiverMetastasis'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
-             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-
-    # 4. mouse, CosMx, brain with PFF induced PD
-    # 1 female and 2 male mic
-    # zenodo.10729766
-    elif project_id == 6:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.10729766/seurat_object_3mon.rds'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/6.zenodo.10729766_mouse_brain'
-        prefix = 'zenodo.10729766_mouse_brain'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=1, min_cells=3, min_counts=1, layer_key=None,
-             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
-
-    # 5. zenodo.8063124
-    # human, Clear cell renal cell carcinoma (ccRCC)
-    # 12 tumor sections and 2 NAT controls
-    elif project_id == 7:
-        fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.10729766/seurat_object_3mon.rds'
-        output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/7.zenodo.8063124_human'
-        prefix = 'zenodo.10729766_mouse_brain'
-        print(f'Running for [{prefix}] project...')
-        main(prefix, fn, output_dir, n_process=3, min_genes=1, min_cells=3, min_counts=1, layer_key=None,
-             latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+# def spatial_autocorrelation(adata,
+#                             layer_key="raw_counts",
+#                             latent_obsm_key="spatial",
+#                             n_neighbors=10,
+#                             somde_k=20,
+#                             n_processes=None,
+#                             prefix='',
+#                             output_dir='.'):
+#     """
+#     Calculate spatial autocorrelation values using Moran's I, Geary'C, Getis's G and SOMDE algorithms
+#     :param adata:
+#     :param layer_key:
+#     :param latent_obsm_key:
+#     :param n_neighbors:
+#     :param somde_k:
+#     :param n_processes:
+#     :param prefix:
+#     :param output_dir:
+#     :return:
+#     """
+#     print('Computing spatial weights matrix...')
+#     sc.pp.filter_cells(adata, min_genes=100)
+#     ind, neighbors, weights_n = neighbors_and_weights(adata, latent_obsm_key=latent_obsm_key, n_neighbors=n_neighbors)
+#     Weights = get_w(ind, weights_n)
+#     print("Computing Moran's I...")
+#     # morans_ps = morans_i_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
+#     # # np.savetxt(f'{output_dir}/{prefix}_morans_ps.txt', morans_ps)
+#     # fdr_morans_ps = fdr(morans_ps)
+#     # # np.savetxt(f'{output_dir}/{prefix}_fdr_morans_ps.txt', fdr_morans_ps)
+#     # print("Computing Geary's C...")
+#     # gearys_cs = gearys_c_p_values(adata, ind, weights_n, layer_key=layer_key, n_process=n_processes)
+#     # # np.savetxt(f'{output_dir}/{prefix}_gearys_cs.txt', gearys_cs)
+#     # fdr_gearys_cs = fdr(gearys_cs)
+#     # # np.savetxt(f'{output_dir}/{prefix}_fdr_gearys_cs.txt', fdr_gearys_cs)
+#     # print("Computing Getis G...")
+#     getis_gs = getis_g_p_values(adata, Weights, n_processes=n_processes, layer_key=layer_key)
+#     np.savetxt(f'{output_dir}/{prefix}_getis_gs.txt', getis_gs)
+#     # fdr_getis_gs = fdr(getis_gs)
+#     # np.savetxt(f'{output_dir}/{prefix}_fdr_getis_gs.txt', fdr_getis_gs)
+#     morans_ps = np.loadtxt(f'{output_dir}/{prefix}_morans_ps.txt')
+#     fdr_morans_ps = np.loadtxt(f'{output_dir}/{prefix}_fdr_morans_ps.txt')
+#     gearys_cs = np.loadtxt(f'{output_dir}/{prefix}_gearys_cs.txt')
+#     fdr_gearys_cs = np.loadtxt(f'{output_dir}/{prefix}_fdr_gearys_cs.txt')
+#     # getis_gs = np.loadtxt(f'{output_dir}/{prefix}_getis_gs.txt')
+#     # fdr_getis_gs = np.loadtxt(f'{output_dir}/{prefix}_fdr_getis_gs.txt')
+#     print('Computing SOMDE...')
+#     adjusted_p_values = somde_p_values(adata, k=somde_k, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
+#     # np.savetxt(f'{output_dir}/{prefix}_fdr_SOMDE.txt', adjusted_p_values)
+#     more_stats = pd.DataFrame({
+#         'C': gearys_cs,
+#         'FDR_C': fdr_gearys_cs,
+#         'I': morans_ps,
+#         'FDR_I': fdr_morans_ps,
+#         'G': getis_gs,
+#         'FDR_G': fdr_getis_gs,
+#         'FDR_SOMDE': adjusted_p_values
+#     }, index=adata.var_names)
+#     more_stats.to_csv(f'{output_dir}/{prefix}_more_stats.csv', sep='\t')
+#     return more_stats
+#
+#
+# def combind_fdrs(pvalue_df, method='fisher') -> np.array:
+#     """method options are {}"""
+#     from scipy.stats import combine_pvalues
+#     combined = np.apply_along_axis(combine_pvalues, 1, pvalue_df, method=method)[:, 1]
+#     return combined  # shape (n_gene, )
+#
+#
+# def preprocess(adata: ad.AnnData, min_genes=0, min_cells=3, min_counts=1, max_gene_num=4000):
+#     adata.var_names_make_unique()  # compute the number of genes per cell (computes ‘n_genes' column)
+#     # # find mito genes
+#     sc.pp.ﬁlter_cells(adata, min_genes=0)
+#     # add the total counts per cell as observations-annotation to adata
+#     adata.obs['n_counts'] = np.ravel(adata.X.sum(axis=1))
+#     # ﬁltering with basic thresholds for genes and cells
+#     sc.pp.ﬁlter_cells(adata, min_genes=min_genes)
+#     sc.pp.ﬁlter_genes(adata, min_cells=min_cells)
+#     sc.pp.ﬁlter_genes(adata, min_counts=min_counts)
+#     adata = adata[adata.obs['n_genes'] < max_gene_num, :]
+#     return adata
+#
+#
+# def hot(data, layer_key="raw_counts", latent_obsm_key="spatial"):
+#     import hotspot
+#     hs = hotspot.Hotspot(data,
+#                          layer_key=layer_key,
+#                          model='bernoulli',
+#                          latent_obsm_key=latent_obsm_key)
+#     hs.create_knn_graph(weighted_graph=False, n_neighbors=10)
+#     hs_results = hs.compute_autocorrelations()
+#     return hs, hs_results
+#
+#
+# def select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=True):
+#     """
+#     Select genes...
+#     :param more_stats:
+#     :param hs_results:
+#     :param fdr_threshold:
+#     :param combine: To select genes, combine p-values then choose genes have
+#     :return:
+#     """
+#     # if combine:
+#     more_stats['FDR'] = hs_results.FDR
+#     cfdrs = combind_fdrs(more_stats[['FDR_C', 'FDR_I', 'FDR_G', 'FDR_SOMDE', 'FDR']])
+#     more_stats['combined'] = cfdrs
+#     cgenes = more_stats.loc[more_stats['combined'] < fdr_threshold].index
+#     print(f"Combinded FDRs gives: {len(cgenes)} genes")  # 6961
+#     # return genes
+#     # else:
+#     moran_genes = more_stats.loc[more_stats.FDR_I < fdr_threshold].index
+#     geary_genes = more_stats.loc[more_stats.FDR_C < fdr_threshold].index
+#     getis_genes = more_stats.loc[more_stats.FDR_G < fdr_threshold].index
+#     somde_genes = more_stats.loc[more_stats.FDR_SOMDE < fdr_threshold].index
+#     hs_genes = hs_results.loc[(hs_results.FDR < fdr_threshold)].index
+#     inter_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes), set(somde_genes))
+#     print(f"Moran's I find {len(moran_genes)} genes")  # 3860
+#     print(f"Geary's C find {len(geary_genes)} genes")  # 7063
+#     print(f'getis find {len(getis_genes)} genes')  # 4285
+#     print(f'SOMDE find {len(somde_genes)} genes')  # 2593
+#     print(f'intersection gene num: {len(inter_genes)}')  # 3416
+#     # check somde results
+#     t = set(somde_genes).intersection(set(hs_genes))
+#     print(f'SOMDE genes {len(t)} in hs_genes')
+#     # select
+#     genes = inter_genes.intersection(set(hs_genes))
+#     print(f'4 methods: inter_genes intersection with FDR genes: {len(genes)}')
+#     global_genes = set.intersection(set(moran_genes), set(geary_genes), set(getis_genes)).intersection(set(hs_genes))
+#     print(f'Global inter_genes intersection with FDR genes: {len(genes)}')  # 2728
+#     return genes
+#
+#
+# def main(prefix,
+#          fn,
+#          output_dir,
+#          n_process=4,
+#          min_genes=0,
+#          min_cells=3,
+#          min_counts=1,
+#          layer_key=None,
+#          latent_obsm_key="spatial",
+#          n_neighbors=10,
+#          somde_k=20):
+#     """
+#     Main function to calculate spatial autocorrelation values for genes
+#     :param prefix: project name
+#     :param fn: h5ad file name
+#     :param output_dir: output directory
+#     :param n_process: number of processes when computing in parallel
+#     :param min_genes: filter cells
+#     :param min_cells: filter genes
+#     :param min_counts: filter genes
+#     :param layer_key: layers containing gene expression matrix
+#     :param latent_obsm_key: key stored cell/spot spatial coordinates
+#     :param n_neighbors: number of neighbors when building KNN
+#     :param somde_k: number of neighbors when using SOMDE model
+#     :return:
+#     """
+#     adata = sc.read_h5ad(fn)
+#     adata = preprocess(adata, min_genes=min_genes, min_cells=min_cells, min_counts=min_counts)
+#     # ---- HOTSPOT autocorrelation
+#     hs, hs_results = hot(adata, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
+#     # Select genes
+#     more_stats = spatial_autocorrelation(adata,
+#                                          layer_key=layer_key,
+#                                          latent_obsm_key=latent_obsm_key,
+#                                          n_neighbors=n_neighbors,
+#                                          somde_k=somde_k,
+#                                          n_processes=n_process,
+#                                          prefix=prefix,
+#                                          output_dir=output_dir)
+#     select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=False)
+#
+#
+# if __name__ == '__main__':
+#     project_id = sys.argv[1]
+#     # 1. E14-16h
+#     # more_stats = spatial_autocorrelation(sub_adata,
+#     #                                      layer_key="raw_counts",
+#     #                                      latent_obsm_key="spatial",
+#     #                                      n_neighbors=10,
+#     #                                      somde_k=20,
+#     #                                      n_processes=None,
+#     #                                      prefix='',
+#     #                                      output_dir='.')
+#     # select_genes(more_stats, hs_results, fdr_threshold=0.05, combine=False)
+#     if project_id == 'E14':
+#         fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E14-16h_pca.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E14-16h'
+#         prefix = 'E14-16h'
+#         print(f'Running for {prefix} project...')
+#         main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts",latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
+#     elif project_id == 'E16':
+#         fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/E16-18h_pca.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/E16-18h'
+#         prefix = 'E16-18h'
+#         print(f'Running for {prefix} project...')
+#         main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#     elif project_id == 'L1':
+#         fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L1_pca.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L1'
+#         prefix = 'L1'
+#         print(f'Running for {prefix} project...')
+#         main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#     elif project_id == 'L2':
+#         fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L2_pca.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L2'
+#         prefix = 'L2'
+#         print(f'Running for {prefix} project...')
+#         main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#     elif project_id == 'L3':
+#         fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/DATA/fly_pca/L3_pca.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/L3'
+#         prefix = 'L3'
+#         print(f'Running for {prefix} project...')
+#         main(prefix, fn, output_dir, n_process=3, layer_key="raw_counts", latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#
+#     project_id = int(project_id)
+#     # 1. dryad.8t8s248, MERFISH, 2024-07-16
+#     # mouse brain, preoptic region
+#     if project_id == 1:
+#         fn = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish/Moffitt_and_Bambah-Mukku_et_al_merfish_all_cells.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/1.merfish'
+#         prefix = 'merfish'
+#         print(f'Running for {prefix} project...')
+#         main(prefix, fn, output_dir, n_process=20, layer_key=None,latent_obsm_key="spatial",n_neighbors=10,somde_k=20)
+#
+#     # 2. zenodo.7551712, 10X Visium, human colorectal cancer (CRC)
+#     # 7 individuals; two samples per patient
+#     # GRN: using known TF-target interactions from DoRothEA
+#     # GRCh38
+#     elif project_id == 2:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_BelgianCohort/sp.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/2.zenodo.7551712_BelgianCohort'
+#         prefix = 'zenodo.7551712_BelgianCohort'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None, latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#     elif project_id == 3:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_KoreanCohort/sp.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/3.zenodo.7551712_KoreanCohort'
+#         prefix = 'zenodo.7551712_KoreanCohort'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+#              latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#     elif project_id == 4:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/4.zenodo.7551712_LiverMetastasis'
+#         prefix = 'zenodo.7551712_LiverMetastasis'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+#              latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#
+#     # 3. human ovarian tumour
+#     # 10X Visium (GSE211956) & CosMx (zenodo.8287970)
+#     # High-grade serous ovarian tumours from 10 patients diagnosed with stage III-IV cancers
+#     elif project_id == 5:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/5.zenodo.7551712_LiverMetastasis'
+#         prefix = 'zenodo.7551712_LiverMetastasis'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+#              latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#     elif project_id == 6:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.7551712/DeconvolutionResults_ST_CRC_LiverMetastasis/sp.h5ad'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/5.zenodo.7551712_LiverMetastasis'
+#         prefix = 'zenodo.7551712_LiverMetastasis'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=10, min_cells=50, min_counts=10, layer_key=None,
+#              latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#
+#     # 4. mouse, CosMx, brain with PFF induced PD
+#     # 1 female and 2 male mic
+#     # zenodo.10729766
+#     elif project_id == 6:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.10729766/seurat_object_3mon.rds'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/6.zenodo.10729766_mouse_brain'
+#         prefix = 'zenodo.10729766_mouse_brain'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=1, min_cells=3, min_counts=1, layer_key=None,
+#              latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
+#
+#     # 5. zenodo.8063124
+#     # human, Clear cell renal cell carcinoma (ccRCC)
+#     # 12 tumor sections and 2 NAT controls
+#     elif project_id == 7:
+#         fn = '/zfsqd1/ST_OCEAN/USRS/hankai/database/SpaGRN/zenodo.10729766/seurat_object_3mon.rds'
+#         output_dir = '/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/exp/13.revision/7.zenodo.8063124_human'
+#         prefix = 'zenodo.10729766_mouse_brain'
+#         print(f'Running for [{prefix}] project...')
+#         main(prefix, fn, output_dir, n_process=3, min_genes=1, min_cells=3, min_counts=1, layer_key=None,
+#              latent_obsm_key="spatial", n_neighbors=10, somde_k=20)
