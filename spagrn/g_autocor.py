@@ -122,6 +122,6 @@ def getis_g(adata,
     if mode == 'pvalue':
         p_values = _getis_g_parallel(gene_expression_matrix, Weights, n_genes, n_processes=n_processes)
         return p_values
-    elif mode == 'zsocre':
+    elif mode == 'zscore':
         z_scores = _getis_g_zscore_parallel(gene_expression_matrix, Weights, n_genes, n_processes=n_processes)
         return z_scores
