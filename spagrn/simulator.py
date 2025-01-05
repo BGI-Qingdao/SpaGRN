@@ -14,8 +14,6 @@ import anndata as an
 import numpy as np
 from random import sample
 from typing import Union, Optional, List
-import sys
-sys.path.append('/dellfsqd2/ST_OCEAN/USER/liyao1/07.spatialGRN/')
 
 
 class Simulator(object):
