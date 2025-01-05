@@ -70,7 +70,7 @@ from tqdm import tqdm
 def _compute_g_for_gene(args):
     gene_expression_matrix, gene_x_id, w = args
     g = G(gene_expression_matrix[:, gene_x_id], w)
-    print(f'gene{gene_x_id}: p_value: {g.p_norm}')
+    # print(f'gene{gene_x_id}: p_value: {g.p_norm}')
     return g.p_norm
 
 
@@ -85,7 +85,7 @@ def _getis_g_parallel(gene_expression_matrix, w, n_genes, n_processes=None):
 def _compute_g_zscore_for_gene(args):
     gene_expression_matrix, gene_x_id, w = args
     g = G(gene_expression_matrix[:, gene_x_id], w)
-    print(f'gene{gene_x_id}: z_score: {g.z_norm}')
+    # print(f'gene{gene_x_id}: z_score: {g.z_norm}')
     return g.z_norm
 
 
@@ -97,10 +97,10 @@ def _getis_g_zscore_parallel(gene_expression_matrix, w, n_genes, n_processes=Non
 
 
 def getis_g(adata,
-                     Weights,
-                     n_processes=None,
-                     layer_key=None,
-                     mode='pvalue'):
+            Weights,
+            n_processes=None,
+            layer_key=None,
+            mode='pvalue'):
     """
     Calculate getis ord general g for all genes and return getis_g_p_values values as a numpy.array
     :param adata: data containing gene expression matrix and cell-feature spatial coordinates array
@@ -114,7 +114,8 @@ def getis_g(adata,
     n_genes = len(adata.var_names)
     # prepare gene expression matrix format
     if layer_key:
-        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(adata.layers[layer_key]) else adata.layers[layer_key]
+        gene_expression_matrix = adata.layers[layer_key].toarray() if scipy.sparse.issparse(
+            adata.layers[layer_key]) else adata.layers[layer_key]
     else:
         gene_expression_matrix = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X
 

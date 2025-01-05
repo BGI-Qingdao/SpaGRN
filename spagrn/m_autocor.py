@@ -54,28 +54,28 @@ from tqdm import tqdm
 #     stdI = np.sqrt(VI)
 #     # Z score
 #     Z = (I - EI) / stdI
+#     return Z
 #     # Perform one-tail test one z score
-#     p_value = 1 - norm.cdf(Z)  # right tail
-#     return p_value
-
-
-def morans_i_p_value_one_gene(x, w):
-    i = Moran(x, w)
-    return i.p_norm
+#     # p_value = 1 - norm.cdf(Z)  # right tail
+#     # return p_value
+#
+#
+# def morans_i_p_value_one_gene(x, w):
+#     i = Moran(x, w)
+#     return i.p_norm
 
 
 # parallel computing
 def _compute_i_for_gene(args):
     x, w = args
-    Ip = morans_i_p_value_one_gene(x, w)
-    return Ip
+    i = Moran(x, w)
+    return i.p_norm
 
 
 def _compute_i_zscore_for_gene(args):
     x, w = args
     i = Moran(x, w)
-    zp = i.z_norm  # TODO: 2024-12-31: to get z_scores of these autocorrelation statics
-    return zp
+    return i.z_norm
 
 
 def _morans_i_parallel(n_genes, gene_expression_matrix, w, n_processes=None):
