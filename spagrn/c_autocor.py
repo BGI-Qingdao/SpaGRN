@@ -38,20 +38,19 @@ from tqdm import tqdm
 #     return gearys_c_array
 #
 #
-# def _gearys_c_p_value_one_gene(adata, gene_x_id, weights, gearys_c_array):
+# def _gearys_c_p_value_one_gene(gene_expression_matrix, n_genes, gene_x_id, weights, gearys_c_array):
 #     C = gearys_c_array[gene_x_id]
-#     n = len(adata.obs_names)
 #     EC = 1
-#     K = cal_k(adata, gene_x_id, n)
+#     K = cal_k(gene_expression_matrix, gene_x_id, n_genes)
 #     S0 = cal_s0(weights)
 #     S1 = cal_s1(weights)
 #     S2 = cal_s2(weights)
-#     part1 = (n - 1) * S1 * (n ** 2 - 3 * n + 3 - K * (n - 1)) / (np.square(S0) * n * (n - 2) * (n - 3))
-#     part2 = (n ** 2 - 3 - K * np.square(n - 1)) / (n * (n - 2) * (n - 3))
-#     part3 = (n - 1) * S2 * (n ** 2 + 3 * n - 6 - K * (n ** 2 - n + 2)) / (4 * n * (n - 2) * (n - 3) * np.square(S0))
+#     part1 = (n_genes - 1) * S1 * (n_genes ** 2 - 3 * n_genes + 3 - K * (n_genes - 1)) / (np.square(S0) * n_genes * (n_genes - 2) * (n_genes - 3))
+#     part2 = (n_genes ** 2 - 3 - K * np.square(n_genes - 1)) / (n_genes * (n_genes - 2) * (n_genes - 3))
+#     part3 = (n_genes - 1) * S2 * (n_genes ** 2 + 3 * n_genes - 6 - K * (n_genes ** 2 - n_genes + 2)) / (4 * n_genes * (n_genes - 2) * (n_genes - 3) * np.square(S0))
 #     VC = part1 + part2 - part3
 #     # variance = (2 * (n ** 2) * S1 - n * S2 + 3 * (S0 ** 2)) / (S0 ** 2 * (n - 1) * (n - 2) * (n - 3))
-#     VC_norm = (1 / (2 * (n + 1) * S0 ** 2)) * ((2 * S1 + S2) * (n - 1) - 4 * S0 ** 2)
+#     VC_norm = (1 / (2 * (n_genes + 1) * S0 ** 2)) * ((2 * S1 + S2) * (n_genes - 1) - 4 * S0 ** 2)
 #     Z = (C - EC) / np.sqrt(VC_norm)
 #     p_value = 1 - norm.cdf(Z)
 #     print(f'C: {C}\nVC: {VC}\nVC_norm: {VC_norm}\nZ: {Z}\np_value: {p_value}')
