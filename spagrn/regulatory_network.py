@@ -214,6 +214,7 @@ class InferNetwork(Network):
                                n_neighbors=n_neighbors,
                                weighted_graph=weighted_graph,
                                cache=cache,
+                               save_tmp=save_tmp,
                                fn=f'{project_name}_{mode}_adj.csv',
                                local=local,
                                methods=methods,
@@ -225,7 +226,7 @@ class InferNetwork(Network):
         # 4. Compute Modules
         # ctxcore.genesig.Regulon
         modules = self.get_modules(adjacencies, df, rho_mask_dropouts=rho_mask_dropouts, prefix=project_name)
-        before_cistarget(tfs, modules, project_name)
+        # before_cistarget(tfs, modules, project_name)
 
         # 5. Regulons Prediction aka cisTarget
         # ctxcore.genesig.Regulon
@@ -247,7 +248,8 @@ class InferNetwork(Network):
                      regulons,
                      auc_threshold=self.params["auc_threshold"],
                      num_workers=num_workers,
-                     save_tmp=save_tmp, cache=cache,
+                     save_tmp=save_tmp,
+                     cache=cache,
                      noweights=noweights,
                      normalize=normalize,
                      fn=f'{project_name}_auc.csv')
@@ -374,8 +376,8 @@ class InferNetwork(Network):
                                 verbose=verbose,
                                 client_or_address=custom_client,
                                 **kwargs)
-        # if save_tmp:
-        #     adjacencies.to_csv(fn, index=False)
+        if save_tmp:
+            adjacencies.to_csv(fn, index=False)
         self.adjacencies = adjacencies
         self.data.uns['adj'] = adjacencies
         return adjacencies
@@ -398,7 +400,6 @@ class InferNetwork(Network):
         :param somde_k:
         :param n_processes:
         :param local:
-        :param raw:
         :param cache:
         :return:
         """
@@ -551,7 +552,7 @@ class InferNetwork(Network):
             n_neighbors=10,
             fdr_threshold=0.05,
             tf_list=None,
-            save_tmp=True,
+            save_tmp=False,
             jobs=None,
             cache=False,
             local=False,
@@ -591,7 +592,6 @@ class InferNetwork(Network):
         :param combine:
         :param mode:
         :param somde_k:
-        :param raw:
         :param operation:
         :param methods:
         :param fn: output file name
@@ -604,19 +604,20 @@ class InferNetwork(Network):
             self.data.uns['adj'] = local_correlations
             return local_correlations
         else:
-            hs = hotspot.Hotspot(data,
-                                 layer_key=layer_key,
-                                 model=model,
-                                 latent_obsm_key=latent_obsm_key,
-                                 umi_counts_obs_key=umi_counts_obs_key,
-                                 **kwargs)
-            hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
-            hs_results = hs.compute_autocorrelations()
-            # hs_genes = hs_results[hs_results.FDR < fdr_threshold].index
-            # 2024-12-20: select genes or provide a list of genes
             if gene_list:
                 hs_genes = gene_list
             else:
+                hs = hotspot.Hotspot(data,
+                                     layer_key=layer_key,
+                                     model=model,
+                                     latent_obsm_key=latent_obsm_key,
+                                     umi_counts_obs_key=umi_counts_obs_key,
+                                     **kwargs)
+                hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
+                hs_results = hs.compute_autocorrelations()
+                # hs_genes = hs_results[hs_results.FDR < fdr_threshold].index
+                # 2024-12-20: select genes or provide a list of genes
+
                 # 1: Select genes
                 self.spatial_autocorrelation(data,
                                              layer_key=layer_key,
@@ -627,13 +628,14 @@ class InferNetwork(Network):
                                              local=local,
                                              cache=cache)
                 self.more_stats['FDR'] = hs_results.FDR
-                # self.more_stats.to_csv('more_stats.csv', sep='\t')
+
                 hs_genes = self.select_genes(methods=methods,
                                              fdr_threshold=fdr_threshold,
                                              local=local,
                                              combine=combine,
                                              operation=operation)
                 hs_genes = list(hs_genes)
+                assert len(hs_genes) > 0
 
             # 2. Define gene-gene relationships with pair-wise local correlations
             print(f'Current mode is {mode}')
@@ -674,9 +676,11 @@ class InferNetwork(Network):
                                                                select_genes_not_tfs,
                                                                num_workers=jobs,
                                                                layer_key=layer_key)
+        # 2025-01-05
+        local_correlations['importance'] = local_correlations['importance'].astype(np.float64)
         self.data.uns['adj'] = local_correlations
-        # if save_tmp:
-        #     local_correlations.to_csv(fn, index=False)
+        if save_tmp:
+            local_correlations.to_csv(fn, index=False)
         return local_correlations
 
     # ------------------------------------------------------#
@@ -699,6 +703,7 @@ class InferNetwork(Network):
         :param prefix:
         :return:
         """
+        print(adjacencies.dtypes)
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
         )
@@ -717,7 +722,7 @@ class InferNetwork(Network):
                       motif_anno_fn: str,
                       num_workers: int,
                       cache: bool = True,
-                      save_tmp: bool = True,
+                      save_tmp: bool = False,
                       fn: str = 'motifs.csv',
                       prefix: str = 'exp',
                       **kwargs) -> Sequence[Regulon]:
@@ -831,8 +836,8 @@ class InferNetwork(Network):
 
         self.auc_mtx = auc_mtx
         self.data.obsm['auc_mtx'] = self.auc_mtx
-        # if save_tmp:
-        #     auc_mtx.to_csv(fn)
+        if save_tmp:
+            auc_mtx.to_csv(fn)
         return auc_mtx
 
     def receptor_auc(self, auc_threshold=None, p_range=0.01, num_workers=20) -> Optional[pd.DataFrame]:
@@ -920,7 +925,6 @@ class InferNetwork(Network):
             filtered_targets = before_targets - set(final_targets)
             if tf in filtered_targets:
                 filtered_targets.remove(tf)
-            filtered[tf] = list(filtered_targets)
             filtered[tf] = list(filtered_targets)
         self.filtered = filtered
         self.data.uns['filtered_genes'] = filtered
@@ -1053,3 +1057,54 @@ def cal_isr(data) -> pd.DataFrame:
 #     # sum receptor expression value
 #     isr_df = df.groupby(level=0, axis=1).sum()
 #     return isr_df
+
+
+def get_only_receptors(adata):
+    """get only receptors, exclude target genes"""
+    dd = adata.uns['regulon_dict']
+    rd = adata.uns['receptor_dict_all']
+    new_rd = {}
+    for regulon, targets in dd.items():
+        if regulon.strip('(+)') in rd:
+            onlyreceptor = set(rd[regulon.strip('(+)')]) - set(targets)
+            new_rd[regulon.strip('(+)')] = list(onlyreceptor)
+        else:
+            new_rd[regulon.strip('(+)')] = targets
+    # for module, rr in rd.items():
+    #     # for every module
+    #     if f'{module}(+)' in dd:  # if the module contains target genes
+    #         onlyreceptor = set(rr) - set(dd[f'{module}(+)'])  # delete targets
+    #         new_rd[module] = list(onlyreceptor)
+    #     else:  # if the module does not contain target genes
+    #         new_rd[module] = rr  # remain the same
+    return new_rd
+
+
+def receptor_auc(adata, receptor_dict, auc_threshold=None, p_range=0.01, num_workers=20):
+    """
+    Calculate AUC value for modules that detected receptor genes within
+    :param auc_threshold:
+    :param p_range:
+    :param num_workers:
+    :return:
+    """
+    from ctxcore.genesig import GeneSignature
+    d = {}
+    for k,v in receptor_dict.items():
+        if len(v)>0:
+            d[k]=v
+    # 1. create new modules
+    receptor_modules = list(
+        map(
+            lambda x: GeneSignature(
+                name=x,
+                gene2weight=d[x],
+            ),
+            d,
+        )
+    )
+    ex_matrix = adata.to_df()
+    from pyscenic.aucell import aucell
+    receptor_auc_mtx = aucell(ex_matrix, receptor_modules, auc_threshold=auc_threshold, num_workers=num_workers)
+    return receptor_auc_mtx
+
