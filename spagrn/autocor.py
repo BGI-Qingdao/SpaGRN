@@ -143,6 +143,8 @@ def flat_weights(cell_names, ind, weights, n_neighbors=30):
     cell1 = np.repeat(cell_names, n_neighbors)
     cell2_indices = ind.flatten()  # starts from 0
     cell2 = cell_names[cell2_indices]
+    print(len(cell1))
+    print(len(cell2))
     weight = weights.to_numpy().flatten()
     df = pd.DataFrame({
         "Cell_x": cell1,
@@ -233,9 +235,9 @@ def format_gene_array(gene_array):
     return gene_array.reshape(-1)
 
 
-def cal_k(adata, gene_x_id, n):
-    gene_x_exp_mean = adata.X[:, gene_x_id].mean()
-    gene_x_exp = format_gene_array(adata.X[:, gene_x_id])
+def cal_k(gene_expression_matrix:np.ndarray, gene_x_id, n):
+    gene_x_exp_mean = gene_expression_matrix[:, gene_x_id].mean()
+    gene_x_exp = format_gene_array(gene_expression_matrix[:, gene_x_id])
     denominator = np.square(np.sum(np.square(gene_x_exp - gene_x_exp_mean)))
     numerator = n * np.sum(np.power(gene_x_exp - gene_x_exp_mean, 4))
     K = numerator / denominator
