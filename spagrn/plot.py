@@ -321,7 +321,7 @@ def plot_3d_web(data, auc_mtx, reg_name, prefix='', zscale=1, xscale=1, yscale=1
 def auc_heatmap(data: anndata.AnnData,
                 auc_mtx: pd.DataFrame,
                 cluster_label: str,
-                rss_fn: str,
+                rss_fn=None,
                 topn=5,
                 save=True,
                 subset=True,
@@ -368,8 +368,11 @@ def auc_heatmap(data: anndata.AnnData,
     celltypes = sorted(list(set(data.obs[cluster_label])))
 
     # Regulon specificity scores (RSS) across predicted cell types
-    if rss_fn is None:
-        rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
+    if rss_fn is None:  # input rss file has highest priority
+        if 'rss' in data.uns:
+            rss_cellType = data.uns['rss']
+        else:
+            rss_cellType = regulon_specificity_scores(auc_mtx, data.obs[cluster_label])
     else:
         rss_cellType = pd.read_csv(rss_fn, index_col=0)
     # Select the top 5 regulon_list from each cell type
