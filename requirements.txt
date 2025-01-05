@@ -12,6 +12,7 @@ arboreto
 ctxcore>=0.2.0
 scikit-learn
 esda
+pysal
 
 Sphinx>=7.1.2
 nbsphinx>=0.9.3
