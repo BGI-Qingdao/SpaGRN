@@ -53,7 +53,7 @@ def inference_command(args):
               method=args.method,
               noweights=args.noweights,
               rho_mask_dropouts=args.rho_mask_dropouts,
-              prefix=prefix)
+              project_name=prefix)
 
 
 def add_computation_parameters(parser):
