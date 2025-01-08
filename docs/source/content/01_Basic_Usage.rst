@@ -142,6 +142,11 @@ If one wants to display their 3D data in a three-dimensional fashion:
     :align: center
 
 
+Hyperparameters 
+--------------
+
+
+
 Warning
 --------------
 
