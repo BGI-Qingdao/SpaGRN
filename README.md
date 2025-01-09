@@ -48,7 +48,7 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 │       │   └── 03_References.rst                            # reference documentation for ReadtheDocs building.
 │       ├── index.rst                   # strcture documentation for ReadtheDocs building.
 │       ├── _static                     # folder for storing static pictures for ReadtheDocs building.
-│       │   ├── E14-16h_hotspot_clusters_heatmap_top5.png    # heatmap for top5 hotspot clusters.
+│       │   ├── E14-16h_hotspot_clusters_heatmap_top5.png    # heatmap for top5 regulons.
 │       │   ├── Egr3.png                                     # spatial distribution for egr3(+).
 │       │   ├── grh_L3.png                                   # spatial distribution for grh(+).
 │       │   └── mainpipeline.BMP                             # pipeline.
@@ -85,7 +85,7 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 │   ├── m_autocor.py                     # python script for calculating Moran's I spatial autocorrelation.
 │   ├── network.py                       # python script for constructing spatial coexpression network.
 │   ├── params.py                        # python script for hyperparameters.
-│   ├── plot.py                          # python script for calculating Getis-Ord G* spatial autocorrelation.
+│   ├── plot.py                          # python script for plotting.
 │   ├── regulatory_network.py            # python script for constructing grn.
 │   ├── results.py                       # python script for storing results.
 │   ├── simulator.py                     # python script for running simulation.
