@@ -41,18 +41,18 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 ├── docs
 │   ├── requirements.txt      # installation requirements for spagrn & ReadtheDocs.
 │   └── source                # folder for storing files for ReadtheDocs building.
-│       ├── conf.py                    # configuration file for ReadtheDocs building.
-│       ├── content                    # folder for storing documentation files for ReadtheDocs building.
-│       │   ├── 00_Installation.rst                  # installation documentation for ReadtheDocs building.
-│       │   ├── 01_Basic_Usage.rst                   # basic usage documentation for ReadtheDocs building.
-│       │   └── 03_References.rst                    # reference documentation for ReadtheDocs building.
-│       ├── index.rst         # strcture documentation for ReadtheDocs building.
-│       ├── _static           # folder for storing static pictures for ReadtheDocs building.
+│       ├── conf.py                     # configuration file for ReadtheDocs building.
+│       ├── content                     # folder for storing documentation files for ReadtheDocs building.
+│       │   ├── 00_Installation.rst                          # installation documentation for ReadtheDocs building.
+│       │   ├── 01_Basic_Usage.rst                           # basic usage documentation for ReadtheDocs building.
+│       │   └── 03_References.rst                            # reference documentation for ReadtheDocs building.
+│       ├── index.rst                   # strcture documentation for ReadtheDocs building.
+│       ├── _static                     # folder for storing static pictures for ReadtheDocs building.
 │       │   ├── E14-16h_hotspot_clusters_heatmap_top5.png    # heatmap for top5 hotspot clusters.
 │       │   ├── Egr3.png                                     # spatial distribution for egr3(+).
 │       │   ├── grh_L3.png                                   # spatial distribution for grh(+).
 │       │   └── mainpipeline.BMP                             # pipeline.
-│       └── Tutorials         # folder for storing tutorial files for ReadtheDocs building.
+│       └── Tutorials                   # folder for storing tutorial files for ReadtheDocs building.
 │           ├── index.rst                                    # strcture documentation in Tutorials section for ReadtheDocs building.
 │           ├── Pbx3.png                                     # spatial distribution for pbx3(+).
 │           ├── stereo_seq_mouse_brain_hi-res.ipynb          # jupyter notebook for high-resolution (subcellular) spatially resolved transcriptomics platforms.
