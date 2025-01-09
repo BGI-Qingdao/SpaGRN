@@ -48,7 +48,7 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 │       │   └── 03_References.rst                            # reference documentation for ReadtheDocs building.
 │       ├── index.rst                   # strcture documentation for ReadtheDocs building.
 │       ├── _static                     # folder for storing static pictures for ReadtheDocs building.
-│       │   ├── E14-16h_hotspot_clusters_heatmap_top5.png    # heatmap for top5 regulons.
+│       │   ├── E14-16h_hotspot_clusters_heatmap_top5.png    # heatmap for top 5 regulons among cell clusters.
 │       │   ├── Egr3.png                                     # spatial distribution for egr3(+).
 │       │   ├── grh_L3.png                                   # spatial distribution for grh(+).
 │       │   └── mainpipeline.BMP                             # pipeline.
@@ -69,12 +69,12 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 │   ├── GRN_params_spatial.csv           # GRN parameters for spatial distribution.
 │   └── LR_parameter_100.csv             # L-R parameters for simulation.
 ├── spagrn                    # spagrn python script package.
-│   ├── auprc.py                         # python script for calculating AUPRC.
-│   ├── autocor.py                       # python script for calculating Hotspot spatial autocorrelation.
+│   ├── auprc.py                         # python script for calculating AUPRC and AUROC.
+│   ├── autocor.py                       # python script for calculating spatial autocorrelation.
 │   ├── benchmark                        # python script for benchmarking and comparison with other tools.
-│   │   ├── genie3.sh                                         # python script for comparing with genie3.
+│   │   ├── genie3.sh                                         # python script for comparing with GENIE3.
 │   │   ├── receptor_results.py                               # python script for comparing receptor detection.
-│   │   └── run_hotspot.py                                    # python script for comparing with hotspot.
+│   │   └── run_hotspot.py                                    # python script for comparing with Hotspot.
 │   ├── c_autocor.py                     # python script for calculating Geary's C spatial autocorrelation.
 │   ├── cli                              # python script for command-line interface
 │   │   ├── __init__.py
@@ -83,16 +83,16 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 │   ├── g_autocor.py                     # python script for calculating Getis-Ord G* spatial autocorrelation.
 │   ├── __init__.py
 │   ├── m_autocor.py                     # python script for calculating Moran's I spatial autocorrelation.
-│   ├── network.py                       # python script for constructing spatial coexpression network.
+│   ├── network.py                       # python script for constructing a basic gene regulatory network.
 │   ├── params.py                        # python script for hyperparameters.
 │   ├── plot.py                          # python script for plotting.
-│   ├── regulatory_network.py            # python script for constructing grn.
+│   ├── regulatory_network.py            # python script for inferring GRN from input SRT dataset.
 │   ├── results.py                       # python script for storing results.
 │   ├── simulator.py                     # python script for running simulation.
 │   └── spa_logger.py                    # python script for logging.
 └── test
     ├── auc.csv                          # example of AUC file.
     ├── old_README.md                    # abandonded README file. 
-    └── regulons.json                    # example of regulons.
+    └── regulons.json                    # example of regulons, TF: target genes.
 
 ```
