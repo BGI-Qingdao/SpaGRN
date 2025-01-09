@@ -37,4 +37,62 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 
 ```
 
+.
+├── docs
+│   ├── requirements.txt      # installation requirements for spagrn & ReadtheDocs.
+│   └── source                # folder for storing files for ReadtheDocs building.
+│       ├── conf.py                    # configuration file for ReadtheDocs building.
+│       ├── content                    # folder for storing documentation files for ReadtheDocs building.
+│       │   ├── 00_Installation.rst                  # installation documentation for ReadtheDocs building.
+│       │   ├── 01_Basic_Usage.rst                   # basic usage documentation for ReadtheDocs building.
+│       │   └── 03_References.rst                    # reference documentation for ReadtheDocs building.
+│       ├── index.rst         # strcture documentation for ReadtheDocs building.
+│       ├── _static           # folder for storing static pictures for ReadtheDocs building.
+│       │   ├── E14-16h_hotspot_clusters_heatmap_top5.png    # heatmap for top5 hotspot clusters.
+│       │   ├── Egr3.png                                     # spatial distribution for egr3(+).
+│       │   ├── grh_L3.png                                   # spatial distribution for grh(+).
+│       │   └── mainpipeline.BMP                             # pipeline.
+│       └── Tutorials         # folder for storing tutorial files for ReadtheDocs building.
+│           ├── index.rst                                    # strcture documentation in Tutorials section for ReadtheDocs building.
+│           ├── Pbx3.png                                     # spatial distribution for pbx3(+).
+│           ├── stereo_seq_mouse_brain_hi-res.ipynb          # jupyter notebook for high-resolution (subcellular) spatially resolved transcriptomics platforms.
+│           └── stereo_seq_mouse_brain_low-res.ipynb         # jupyter notebook for low-resolution (multicellular) spatially resolved transcriptomics platforms.
+├── LICENSE                   # MIT License.
+├── pyproject.toml            # setuptools management ReadtheDocs building.
+├── README.md                 # README file for GitHub.
+├── requirements.txt          # installation requirements.
+├── setup.cfg                 # setuptools configuration file for pip installation.
+├── setup.py                  # setuptools python package file for pip installation.
+├── simulation                # files for simulation. 
+│   ├── GRN_parameter_100.csv            # GRN parameters for simulation.
+│   ├── GRN_params_non_spatial.csv       # GRN parameters for non-spatial distribution.
+│   ├── GRN_params_spatial.csv           # GRN parameters for spatial distribution.
+│   └── LR_parameter_100.csv             # L-R parameters for simulation.
+├── spagrn                    # spagrn python script package.
+│   ├── auprc.py                         # python script for calculating AUPRC.
+│   ├── autocor.py                       # python script for calculating Hotspot spatial autocorrelation.
+│   ├── benchmark                        # python script for benchmarking and comparison with other tools.
+│   │   ├── genie3.sh                                         # python script for comparing with genie3.
+│   │   ├── receptor_results.py                               # python script for comparing receptor detection.
+│   │   └── run_hotspot.py                                    # python script for comparing with hotspot.
+│   ├── c_autocor.py                     # python script for calculating Geary's C spatial autocorrelation.
+│   ├── cli                              # python script for command-line interface
+│   │   ├── __init__.py
+│   │   └── spagrn_parser.py
+│   ├── corexp.py                        # python script for calculating spatial coexpression.
+│   ├── g_autocor.py                     # python script for calculating Getis-Ord G* spatial autocorrelation.
+│   ├── __init__.py
+│   ├── m_autocor.py                     # python script for calculating Moran's I spatial autocorrelation.
+│   ├── network.py                       # python script for constructing spatial coexpression network.
+│   ├── params.py                        # python script for hyperparameters.
+│   ├── plot.py                          # python script for calculating Getis-Ord G* spatial autocorrelation.
+│   ├── regulatory_network.py            # python script for constructing grn.
+│   ├── results.py                       # python script for storing results.
+│   ├── simulator.py                     # python script for running simulation.
+│   └── spa_logger.py                    # python script for logging.
+└── test
+    ├── auc.csv                          # example of AUC file.
+    ├── old_README.md                    # abandonded README file. 
+    └── regulons.json                    # example of regulons
+
 ```
