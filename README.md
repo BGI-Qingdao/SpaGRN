@@ -57,7 +57,7 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 │           ├── Pbx3.png                                     # spatial distribution for pbx3(+).
 │           ├── stereo_seq_mouse_brain_hi-res.ipynb          # jupyter notebook for high-resolution (subcellular) spatially resolved transcriptomics platforms.
 │           └── stereo_seq_mouse_brain_low-res.ipynb         # jupyter notebook for low-resolution (multicellular) spatially resolved transcriptomics platforms.
-├── LICENSE                   # MIT License.
+├── LICENSE                   # GNU General Public License v3.0.
 ├── pyproject.toml            # setuptools management ReadtheDocs building.
 ├── README.md                 # README file for GitHub.
 ├── requirements.txt          # installation requirements.
