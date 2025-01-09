@@ -93,6 +93,6 @@ To enhance clarity and prevent any potential confusion, we have organized this G
 └── test
     ├── auc.csv                          # example of AUC file.
     ├── old_README.md                    # abandonded README file. 
-    └── regulons.json                    # example of regulons
+    └── regulons.json                    # example of regulons.
 
 ```
