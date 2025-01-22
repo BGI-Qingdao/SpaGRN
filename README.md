@@ -4,8 +4,7 @@
 
 ## **SpaGRN**
 
-<img width="442" alt="spagrn_logo" src="https://github.com/user-attachments/assets/a543c72c-432d-497d-83a1-1dd49d73ac97" />
-
+<img src="docs/source/_static/spagrn_logo.png" width="100%" height="100%">
 
 A comprehensive tool to infer TF-centered, spatial gene regulatory networks for the spatially resolved transcriptomics (SRT) data.
 
