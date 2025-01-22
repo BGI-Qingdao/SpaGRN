@@ -3,6 +3,10 @@
 
 
 ## **SpaGRN**
+
+<img width="442" alt="spagrn_logo" src="https://github.com/user-attachments/assets/a543c72c-432d-497d-83a1-1dd49d73ac97" />
+
+
 A comprehensive tool to infer TF-centered, spatial gene regulatory networks for the spatially resolved transcriptomics (SRT) data.
 
 SpaGRN is an open-source Python package for inferring gene regulatory networks (GRNs) based on spatial gene expression data using GPLv3 license. The model takes into account the spatial proximity of genes and TF binding to infer their regulatory relationships. The package is particularly useful for analyzing spatially resolved gene expression data.
