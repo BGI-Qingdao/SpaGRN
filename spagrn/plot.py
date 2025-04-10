@@ -7,9 +7,6 @@
 @author: Yao LI
 @email: liyao1@genomics.cn
 @last modified by: Yao LI
-
-change log:
-    2023/01/08 init
 """
 
 # python core modules
@@ -265,12 +262,9 @@ def plot_3d_web(data, auc_mtx, reg_name, prefix='', zscale=1, xscale=1, yscale=1
     """
     coor = data.obsm['spatial_regis']
 
-    # import plotly.express as px
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
-    # auc_zscore = cal_zscore(auc_mtx)
-    # sub_zscore = auc_zscore[reg_name]
     sub_zscore = auc_mtx[reg_name]
     fig = make_subplots(rows=1, cols=1,
                         specs=[[{'type': 'scene'}]],
@@ -301,7 +295,6 @@ def plot_3d_web(data, auc_mtx, reg_name, prefix='', zscale=1, xscale=1, yscale=1
     )
     fig.update_layout(
         margin=dict(l=10, r=10, b=0, t=0),
-        # legend=set(obs[cluster_label]),
         showlegend=True,
         scene=dict(
             aspectmode='data',
@@ -348,6 +341,14 @@ def auc_heatmap(data: anndata.AnnData,
     :param fn:
     :param legend_fn:
     :param cluster_list: list of cluster names one prefer to use
+    :param row_cluster:
+    :param col_cluster:
+    :param cmap:
+    :param vmin:
+    :param vmax:
+    :param yticklabels:
+    :param xticklabels:
+    :param kwargs:
     :return:
 
     Example:
@@ -388,10 +389,6 @@ def auc_heatmap(data: anndata.AnnData,
 
     # plot z-score
     auc_zscore = cal_zscore(auc_mtx)
-    # 2023-09-22
-    # print(auc_zscore.index)
-    # auc_zscore.index = auc_zscore.index.astype(str)
-    # 2023-09-25
     try:
         plot_data = auc_zscore[topreg].loc[cell_order.index]
     except KeyError:
@@ -439,8 +436,8 @@ def isr_heatmap(data: anndata.AnnData,
     """
     Plot heatmap for Regulon specificity scores (RSS) value
     :param data:
-    :param isr_mtx:
     :param cluster_label:
+    :param isr_mtx:
     :param rss_fn:
     :param topn:
     :param save:
@@ -448,7 +445,15 @@ def isr_heatmap(data: anndata.AnnData,
     :param subset_size:
     :param fn:
     :param legend_fn:
-    :param cluster_list: list of cluster names one prefer to use
+    :param cluster_list:
+    :param row_cluster:
+    :param col_cluster:
+    :param cmap:
+    :param vmin:
+    :param vmax:
+    :param yticklabels:
+    :param xticklabels:
+    :param kwargs:
     :return:
 
     Example:
@@ -645,7 +650,7 @@ def auc_heatmap_reorder(data: anndata.AnnData,
         with open(order_fn, 'r') as f:
             topreg = f.read().splitlines()
 
-    # 2. If Subset
+    # # 2. If Subset
     # if subset and len(data.obs) > subset_size:
     #     fraction = subset_size / len(data.obs)
     #     # do stratified sampling
@@ -689,7 +694,6 @@ def auc_heatmap_reorder(data: anndata.AnnData,
                        cmap="YlGnBu",
                        row_colors=colormap,
                        row_cluster=False, col_cluster=True,
-                       # figsize=(3 * CM, 5.5 * CM),
                        **kwargs)
     g.cax.set_visible(False)
     g.ax_heatmap.set_yticks([])
@@ -831,11 +835,9 @@ def auc_heatmap_reorder2(data: anndata.AnnData,
                        figsize=figsize,
                        **kwargs)
     g.cax.set_visible(True)
-    # g.ax_heatmap.set_yticks([])
     g.ax_heatmap.set_ylabel('')
     g.ax_heatmap.set_xlabel('')
     plt.setp(g.ax_heatmap.yaxis.get_majorticklabels(), rotation=0)
-    # plt.setp(g.ax_heatmap.xaxis.get_majorticklabels(), rotation=45)
     if save:
         plt.tight_layout()
         file_format = os.path.splitext(fn)[1].replace('.','')
@@ -906,9 +908,6 @@ def auc_heatmap_reorder3(data: anndata.AnnData,
     plot_data = auc_zscore[topreg].loc[cell_order.index]
     # calculate mean values for each celltype
     plot_data['celltype'] = cell_order
-    # plot_data = plot_data.groupby(['celltype']).sort_values()
-
-    # plot_data = plot_data.sort_values(list(plot_data.columns), ascending=False).groupby('celltype').to_frame()
 
     plot_data = plot_data.groupby(["celltype"], sort=False).apply(
         lambda x: x.sort_values(list(plot_data.columns), ascending=False))  # .reset_index(drop=True)
@@ -1028,14 +1027,11 @@ def get_top_regulons(data: anndata.AnnData,
     """
     # Select the top 5 regulon_list from each cell type
     cats = sorted(list(set(data.obs[cluster_label])))
-    # 2024-08-21: TODO: is this really necessary
-    # 2023-09-22
     # all cell type labels should be strings
     if not all(isinstance(x, str) for x in cats):
         cats = [str(x) for x in cats]
     rss_celltype.index = rss_celltype.index.astype(str)
 
-    # 2023-09-22
     topreg = []
     for i, c in enumerate(cats):
         topreg.extend(
@@ -1520,15 +1516,3 @@ def plot_isr(mtx,
     file_format = os.path.splitext(fn)[1].replace('.', '')
     plt.savefig(fn, format=file_format)
     plt.close()
-
-
-if __name__ == '__main__':
-    # total celltypes for Drosophilidae data
-    fly3d_cluster_list = ['CNS', 'amnioserosa', 'carcass', 'epidermis', 'epidermis/CNS', 'fat body', 'fat body/trachea',
-                    'foregut', 'foregut/garland cells', 'hemolymph', 'hindgut', 'hindgut/malpighian tubule', 'midgut',
-                    'midgut/malpighian tubules', 'muscle', 'salivary gland', 'testis', 'trachea']
-
-    # # Create an instance of PlotDataParameters and set the required custom parameters
-    # params = PlotDataParameters()
-    # # Generate plot data with the custom parameters
-    # pdata = generate_plot_data(data, auc_mtx, 'annotaion', params)
