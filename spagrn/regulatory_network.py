@@ -156,7 +156,7 @@ class InferNetwork(Network):
         if save_tmp:
             self.tmp_dir = os.path.join(self.project_name, 'tmp_files')
             if not os.path.exists(self.tmp_dir):
-                os.makedirs(self.tmp_dir)
+                os.cache=cacedirs(self.tmp_dir)
 
         global adjacencies
         exp_mat = self._data.to_df()
@@ -201,7 +201,7 @@ class InferNetwork(Network):
         # ctxcore.genesig.Regulon
         modules = self.get_modules(adjacencies,
                                    exp_mat,
-                                   cache=cace,
+                                   cache=cache,
                                    save_tmp=save_tmp,
                                    rho_mask_dropouts=rho_mask_dropouts)
         # before_cistarget(tfs, modules, project_name)
