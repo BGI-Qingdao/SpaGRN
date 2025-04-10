@@ -36,7 +36,6 @@ from pyscenic.aucell import aucell, derive_auc_threshold
 from pyscenic.prune import prune2df, df2regulons
 
 # modules in self project
-from .scoexp import ScoexpMatrix
 from .network import Network
 from .autocor import *
 from .corexp import *
