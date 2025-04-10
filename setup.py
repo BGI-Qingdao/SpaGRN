@@ -6,7 +6,7 @@ from pathlib import Path
 
 setuptools.setup(
     name="spagrn",
-    version="1.1.0",
+    version="1.1.1",
     author="Yao LI",
     author_email="liyao1@genomics.cn",
     url="https://github.com/BGI-Qingdao/SpaGRN",
@@ -22,8 +22,7 @@ setuptools.setup(
         "pyscenic==0.12.1",
         "hotspotsc==1.1.1",
         "scipy",
-        #"numpy<1.20.0,>=1.16.6",
-        "numpy",
+        "numpy<1.24,>=1.16.6",
         "dask",
         "arboreto",
         "ctxcore>=0.2.0",
