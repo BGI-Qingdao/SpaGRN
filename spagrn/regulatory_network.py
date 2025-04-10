@@ -45,41 +45,6 @@ from .m_autocor import morans_i_p_values, morans_i_zscore
 from .g_autocor import getis_g
 
 
-# def before_cistarget(tfs: list, modules: Sequence[Regulon], prefix: str):
-#     """
-#     Detect genes that were generated in the get_modules step
-#     :param tfs: list of TF genes
-#     :param modules: a list of module objects
-#     :param prefix: project name
-#     :return: dictionary, {TF: {module: [genes]}}
-#     """
-#     d = {}
-#     for tf in tfs:
-#         d[tf] = {}
-#         tf_mods = [x for x in modules if x.transcription_factor == tf]
-#         for i, mod in enumerate(tf_mods):
-#             d[tf][f'module {str(i)}'] = list(mod.genes)
-#         with open(f'{prefix}_before_cistarget.json', 'w') as f:
-#             json.dump(d, f, sort_keys=True, indent=4)
-#
-#
-# def get_module_targets(modules):
-#     """
-#     同上 (before_cistarget)
-#     :param modules:
-#     :return: dictionary, {TF: [genes]}
-#     """
-#     d = {}
-#     for module in modules:
-#         tf = module.transcription_factor
-#         tf_mods = [x for x in modules if x.transcription_factor == tf]
-#         targets = []
-#         for i, mod in enumerate(tf_mods):
-#             targets += list(mod.genes)
-#         d[tf] = list(set(targets))
-#     return d
-
-
 def intersection_ci(iterableA, iterableB, key=lambda x: x) -> list:
     """
     Return the intersection of two iterables with respect to `key` function.
@@ -124,12 +89,18 @@ def _set_client(num_workers: int) -> Client:
     return custom_client
 
 
+def save_list(l, fn='list.txt'):
+    """save a list into a text file"""
+    with open(fn, 'w') as f:
+        f.write('\n'.join(l))
+
+
 class InferNetwork(Network):
     """
     Algorithms to infer Gene Regulatory Networks (GRNs)
     """
 
-    def __init__(self, adata=None):
+    def __init__(self, adata=None, project_name: str = 'project', ):
         """
         Constructor of this Object.
         :param data: sequencing data in AnnData format
@@ -137,7 +108,7 @@ class InferNetwork(Network):
         """
         super().__init__()
         self.data = adata
-        # self.load_data_info(pos_label)
+        self.project_name = project_name
 
         self.more_stats = None
         self.weights = None
@@ -153,6 +124,7 @@ class InferNetwork(Network):
             'auc_threshold': 0.05,
             'noweights': False,
         }
+        self.tmp_dir = None
 
     # GRN pipeline infer logic
     def infer(self,
@@ -166,7 +138,6 @@ class InferNetwork(Network):
               num_workers=None,
               save_tmp=False,
               cache=False,
-              project_name: str = 'project',
 
               layers='raw_counts',
               model='bernoulli',
@@ -183,9 +154,13 @@ class InferNetwork(Network):
               somde_k=20,
               noweights=None,
               normalize: bool = False):
+        if save_tmp:
+            self.tmp_dir = os.path.join(self.project_name, 'tmp_files')
+            if not os.path.exists(self.tmp_dir):
+                os.makedirs(self.tmp_dir)
 
         global adjacencies
-        df = self._data.to_df()
+        exp_mat = self._data.to_df()
 
         if num_workers is None:
             num_workers = cpu_count()
@@ -215,7 +190,7 @@ class InferNetwork(Network):
                                weighted_graph=weighted_graph,
                                cache=cache,
                                save_tmp=save_tmp,
-                               fn=f'{project_name}_{mode}_adj.csv',
+                               fn=f'{self.project_name}_{mode}_adj.csv',
                                local=local,
                                methods=methods,
                                operation=operation,
@@ -225,7 +200,11 @@ class InferNetwork(Network):
 
         # 4. Compute Modules
         # ctxcore.genesig.Regulon
-        modules = self.get_modules(adjacencies, df, rho_mask_dropouts=rho_mask_dropouts, prefix=project_name)
+        modules = self.get_modules(adjacencies,
+                                   exp_mat,
+                                   cache=cace,
+                                   save_tmp=save_tmp,
+                                   rho_mask_dropouts=rho_mask_dropouts)
         # before_cistarget(tfs, modules, project_name)
 
         # 5. Regulons Prediction aka cisTarget
@@ -236,15 +215,15 @@ class InferNetwork(Network):
                                       num_workers=num_workers,
                                       save_tmp=save_tmp,
                                       cache=cache,
-                                      fn=f'{project_name}_motifs.csv',
-                                      prefix=project_name,
+                                      fn=f'{self.project_name}_motifs.csv',
+                                      prefix=self.project_name,
                                       rank_threshold=self.params["rank_threshold"],
                                       auc_threshold=self.params["prune_auc_threshold"],
                                       nes_threshold=self.params["nes_threshold"],
                                       motif_similarity_fdr=self.params["motif_similarity_fdr"])
 
         # 6.0. Cellular Enrichment (aka AUCell)
-        self.cal_auc(df,
+        self.cal_auc(exp_mat,
                      regulons,
                      auc_threshold=self.params["auc_threshold"],
                      num_workers=num_workers,
@@ -252,24 +231,33 @@ class InferNetwork(Network):
                      cache=cache,
                      noweights=noweights,
                      normalize=normalize,
-                     fn=f'{project_name}_auc.csv')
+                     fn=f'{self.tmp_dir}/auc.csv')
+        # self.compute_regulons(adjacencies,
+        #                       exp_mat,
+        #                       dbs,
+        #                       motif_anno_fn,
+        #                       rho_mask_dropouts=rho_mask_dropouts,
+        #                       num_workers=num_workers,
+        #                       save_tmp=save_tmp,
+        #                       cache=cache,
+        #                       noweights=noweights,
+        #                       normalize=normalize)
 
         # 6.1. Receptor AUCs
         if niche_df is not None:
-            # self.get_receptors(niche_df, receptor_key=receptor_key, save_tmp=save_tmp,
-            #                    fn=f'{project_name}_filtered_targets_receptor.json')
-            self.get_filtered_receptors(niche_df, receptor_key=receptor_key, save_tmp=save_tmp, fn=f'{project_name}_receptor.json')
+            self.get_filtered_receptors(niche_df, receptor_key=receptor_key)
             receptor_auc_mtx = self.receptor_auc()
             self.isr(receptor_auc_mtx)
 
         # 7. Calculate Regulon Specificity Scores
         self.cal_regulon_score(cluster_label=cluster_label, save_tmp=save_tmp,
-                               fn=f'{project_name}_regulon_specificity_scores.txt')
+                               fn=f'{self.tmp_dir}/regulon_specificity_scores.txt')
 
         # 8. Save results to h5ad file
         # TODO: check if data has adj, regulon_dict, auc_mtx etc. before saving to disk
         # dtype=object
-        self.data.write_h5ad(f'{project_name}_spagrn.h5ad')
+        self.data.write_h5ad(f'{self.project_name}_spagrn.h5ad')
+        return self.data
 
     @property
     def params(self):
@@ -377,7 +365,7 @@ class InferNetwork(Network):
                                 client_or_address=custom_client,
                                 **kwargs)
         if save_tmp:
-            adjacencies.to_csv(fn, index=False)
+            adjacencies.to_csv(os.path.join(self.tmp_dir, fn), index=False)
         self.adjacencies = adjacencies
         self.data.uns['adj'] = adjacencies
         return adjacencies
@@ -444,8 +432,6 @@ class InferNetwork(Network):
                 'G': getis_gs,
                 'FDR_G': fdr_getis_gs
             }, index=adata.var_names)
-            # more_stats.to_csv('more_stats.csv', sep='\t')
-            # self.check_stats(more_stats,fdr_threshold=0.05)
 
         self.more_stats = more_stats
         return more_stats
@@ -500,8 +486,6 @@ class InferNetwork(Network):
         if local:
             somde_genes = self.more_stats.loc[self.more_stats.FDR_SOMDE < fdr_threshold].index
             print(f'SOMDE find {len(somde_genes)} genes')
-            # TODO: 2024-08-06: only use local genes
-            # save_list(somde_genes, 'local_genes.txt')
             return somde_genes
         # 2. GLOBAL
         # 2.1 combine p-values
@@ -510,7 +494,6 @@ class InferNetwork(Network):
             self.more_stats['combined'] = cfdrs
             genes = self.more_stats.loc[self.more_stats['combined'] < fdr_threshold].index
             print(f"Combinded FDRs gives: {len(cgenes)} genes")
-            # save_list(genes, 'combined_fdr_genes.txt')
             return genes
         # 2.2 individual p-values
         elif methods:
@@ -518,12 +501,10 @@ class InferNetwork(Network):
             if operation == 'intersection':
                 global_inter_genes = set.intersection(*indices_list)
                 print(f'global spatial gene num (intersection): {len(global_inter_genes)}')
-                # save_list(global_inter_genes, f'global_genes_{len(methods)}methods_inter.txt')
                 return global_inter_genes
             elif operation == 'union':
                 global_union_genes = set().union(*indices_list)
                 print(f'global spatial gene num (union): {len(global_union_genes)}')
-                # save_list(global_union_genes, f'global_genes_{len(methods)}methods_union.txt')
                 return global_union_genes
 
     @staticmethod
@@ -604,8 +585,14 @@ class InferNetwork(Network):
             self.data.uns['adj'] = local_correlations
             return local_correlations
         else:
+            # 2024-12-20: select genes or provide a list of genes
             if gene_list:
                 hs_genes = gene_list
+                print('Computing spatial weights matrix...')
+                self.ind, neighbors, self.weights_n = neighbors_and_weights(data, latent_obsm_key=latent_obsm_key,
+                                                                            n_neighbors=n_neighbors)
+                Weights = get_w(self.ind, self.weights_n)
+                self.weights = Weights
             else:
                 hs = hotspot.Hotspot(data,
                                      layer_key=layer_key,
@@ -615,8 +602,6 @@ class InferNetwork(Network):
                                      **kwargs)
                 hs.create_knn_graph(weighted_graph=weighted_graph, n_neighbors=n_neighbors)
                 hs_results = hs.compute_autocorrelations()
-                # hs_genes = hs_results[hs_results.FDR < fdr_threshold].index
-                # 2024-12-20: select genes or provide a list of genes
 
                 # 1: Select genes
                 self.spatial_autocorrelation(data,
@@ -628,6 +613,8 @@ class InferNetwork(Network):
                                              local=local,
                                              cache=cache)
                 self.more_stats['FDR'] = hs_results.FDR
+                if save_tmp:
+                    self.more_stats.to_csv(f'{self.tmp_dir}/more_stats.csv', sep='\t')
 
                 hs_genes = self.select_genes(methods=methods,
                                              fdr_threshold=fdr_threshold,
@@ -636,6 +623,8 @@ class InferNetwork(Network):
                                              operation=operation)
                 hs_genes = list(hs_genes)
                 assert len(hs_genes) > 0
+                if save_tmp:
+                    save_list(hs_genes, fn=f'{self.tmp_dir}/selected_genes.txt')
 
             # 2. Define gene-gene relationships with pair-wise local correlations
             print(f'Current mode is {mode}')
@@ -680,7 +669,7 @@ class InferNetwork(Network):
         local_correlations['importance'] = local_correlations['importance'].astype(np.float64)
         self.data.uns['adj'] = local_correlations
         if save_tmp:
-            local_correlations.to_csv(fn, index=False)
+            local_correlations.to_csv(os.path.join(self.tmp_dir, 'local_correlations.csv'), index=False)
         return local_correlations
 
     # ------------------------------------------------------#
@@ -690,7 +679,8 @@ class InferNetwork(Network):
                     adjacencies: pd.DataFrame,
                     matrix,
                     rho_mask_dropouts: bool = False,
-                    prefix: str = 'exp',
+                    save_tmp=False,
+                    cache=False,
                     **kwargs) -> Sequence[Regulon]:
         """
         Create of co-expression modules
@@ -700,17 +690,18 @@ class InferNetwork(Network):
             * dense 2D numpy.ndarray
             * sparse scipy.sparse.csc_matrix
         :param rho_mask_dropouts:
-        :param prefix:
         :return:
         """
-        print(adjacencies.dtypes)
+        if cache and os.path.isfile(f'{self.tmp_dir}/modules.pkl'):
+            modules = pickle.load(open(f'{self.tmp_dir}/modules.pkl', 'rb'))
+            return modules
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
         )
         self.modules = modules
-        # self.data.uns['modules'] = modules
-        with open(f'{prefix}_modules.pkl', "wb") as f:
-            pickle.dump(modules, f)
+        if save_tmp:
+            with open(f'{self.tmp_dir}/modules.pkl', "wb") as f:
+                pickle.dump(modules, f)
         return modules
 
     # ------------------------------------------------------#
@@ -721,7 +712,7 @@ class InferNetwork(Network):
                       dbs: list,
                       motif_anno_fn: str,
                       num_workers: int,
-                      cache: bool = True,
+                      cache: bool = False,
                       save_tmp: bool = False,
                       fn: str = 'motifs.csv',
                       prefix: str = 'exp',
@@ -776,12 +767,9 @@ class InferNetwork(Network):
         self.data.uns['regulon_dict'] = self.regulon_dict
 
         # save to data
-        with open(f'{prefix}_regulons.pkl', "wb") as f:
-            pickle.dump(regulon_list, f)
-        # self.data.uns['regulons'] = self.regulon_list  TODO: is saving to a pickle file the only way?
-        # if save_tmp:
-        #     df.to_csv(fn)
-        #     self.regulons_to_json(fn=f'{prefix}_regulons.json')
+        if save_tmp:
+            with open(f'{prefix}_regulons.json', 'w') as f:
+                json.dump(self.regulon_dict, f, sort_keys=True, indent=4)
         return regulon_list
 
     # ------------------------------------------------------#
@@ -837,7 +825,7 @@ class InferNetwork(Network):
         self.auc_mtx = auc_mtx
         self.data.obsm['auc_mtx'] = self.auc_mtx
         if save_tmp:
-            auc_mtx.to_csv(fn)
+            auc_mtx.to_csv(os.path.join(self.tmp_dir, 'auc_mtx.csv'))
         return auc_mtx
 
     def receptor_auc(self, auc_threshold=None, p_range=0.01, num_workers=20) -> Optional[pd.DataFrame]:
@@ -868,7 +856,6 @@ class InferNetwork(Network):
         else:
             a_value = auc_threshold
         receptor_auc_mtx = aucell(ex_matrix, receptor_modules, auc_threshold=a_value, num_workers=num_workers)
-        # self.data.obsm['rep_auc_mtx'] = receptor_auc_mtx
         return receptor_auc_mtx
 
     def isr(self, receptor_auc_mtx) -> pd.DataFrame:
@@ -889,7 +876,6 @@ class InferNetwork(Network):
         # combine two dfs
         df = pd.concat([auc_mtx, receptor_auc_mtx], axis=1)
         # sum values
-        # isr_df = df.groupby(by=df.columns, axis=1)
         isr_df = df.groupby(level=0, axis=1).sum()
         self.data.obsm['isr'] = isr_df
         return isr_df
@@ -902,8 +888,6 @@ class InferNetwork(Network):
         Detect genes filtered by cisTarget
         :return:
         """
-        # if self.regulon_dict is None:
-        #     self.regulon_dict = self.get_regulon_dict(self.regulons)
         module_tf = []
         for i in self.modules:
             module_tf.append(i.transcription_factor)
@@ -930,15 +914,13 @@ class InferNetwork(Network):
         self.data.uns['filtered_genes'] = filtered
         return filtered
 
-    def get_filtered_receptors(self, niche_df: pd.DataFrame, receptor_key='to', save_tmp=False,
-                               fn='filtered_targets_receptor.json'):
+    def get_filtered_receptors(self, niche_df: pd.DataFrame, receptor_key='to'):
         """
 
         :type niche_df: pd.DataFrame
         :param receptor_key: column name of receptor
         :param save_tmp:
         :param niche_df:
-        :param fn:
         :return:
         """
         if niche_df is None:
@@ -956,155 +938,33 @@ class InferNetwork(Network):
                 total_receptor = total_receptor | rtf
         self.receptors = total_receptor
         self.receptor_dict = receptor_tf
-        # self.data.uns['receptors'] = list(total_receptor)  # warning: anndata cannot save class set to disk
         self.data.uns['receptor_dict'] = receptor_tf
 
-        # if save_tmp:
-        #     with open(fn, 'w') as fp:
-        #         json.dump(receptor_tf, fp, sort_keys=True, indent=4)
+    # ------------------------------------------------------------------------------------------------
+    def compute_regulons(self, adjacencies, exp_mat, dbs, motif_anno_fn, rho_mask_dropouts, num_workers, save_tmp,
+                         cache,
+                         noweights, normalize):
+        modules = self.get_modules(adjacencies, exp_mat, rho_mask_dropouts=rho_mask_dropouts, prefix=self.project_name)
 
-    # def get_receptors(self, niche_df: pd.DataFrame, receptor_key='to', save_tmp=False, fn='coexpressed_receptor.json'):
-    #     """
-    #     :param niche_df:
-    #     :param receptor_key:
-    #     :param save_tmp:
-    #     :param fn:
-    #     :return:
-    #     """
-    #     if niche_df is None:
-    #         warnings.warn("Ligand-Receptor reference database is missing, skipping get_filtered_receptors method")
-    #         return
-    #
-    #     receptor_tf = {}
-    #     total_receptor = set()
-    #
-    #     module_targets = get_module_targets(self.modules)
-    #     for tf, targets in module_targets.items():
-    #         rtf = set(intersection_ci(set(niche_df[receptor_key]), set(targets), key=str.lower))
-    #         if len(rtf) > 0:
-    #             receptor_tf[tf] = list(rtf)
-    #             receptor_tf[tf] = list(rtf)
-    #             total_receptor = total_receptor | rtf
-    #     self.receptors = total_receptor
-    #     self.receptor_dict = receptor_tf
-    #     # self.data.uns['receptors_all'] = list(total_receptor)  # warning: anndata cannot save class set to disk
-    #     self.data.uns['receptor_dict_all'] = receptor_tf
-    #
-    #     if save_tmp:
-    #         with open(fn, 'w') as fp:
-    #             json.dump(receptor_tf, fp, sort_keys=True, indent=4)
+        regulons = self.prune_modules(modules,
+                                      dbs,
+                                      motif_anno_fn,
+                                      num_workers=num_workers,
+                                      save_tmp=save_tmp,
+                                      cache=cache,
+                                      fn=f'{self.project_name}_motifs.csv',
+                                      prefix=self.project_name,
+                                      rank_threshold=self.params["rank_threshold"],
+                                      auc_threshold=self.params["prune_auc_threshold"],
+                                      nes_threshold=self.params["nes_threshold"],
+                                      motif_similarity_fdr=self.params["motif_similarity_fdr"])
 
-
-# def get_filtered_receptors(adata, niche_df: pd.DataFrame, receptor_key='to'):
-#     if niche_df is None:
-#         warnings.warn("Ligand-Receptor reference database is missing, skipping get_filtered_receptors method")
-#         return
-#
-#     receptor_tf = {}
-#     total_receptor = set()
-#
-#     for tf, targets in adata.uns['filtered_genes'].items():
-#         rtf = set(intersection_ci(set(niche_df[receptor_key]), set(targets), key=str.lower))
-#         if len(rtf) > 0:
-#             receptor_tf[tf] = list(rtf)
-#             total_receptor = total_receptor | rtf
-#
-#     # self.data.uns['receptors'] = list(total_receptor)  # warning: anndata cannot save class set to disk
-#     adata.uns['receptor_dict'] = receptor_tf
-#     return adata
-
-
-def save_list(l, fn='list.txt'):
-    with open(fn, 'w') as f:
-        f.write('\n'.join(l))
-
-
-def cal_isr(data) -> pd.DataFrame:
-    """
-    A function for calculating ISR matrix
-    :param data:
-    :return:
-    """
-    if 'isr' not in data.obsm:
-        receptor_auc_mtx = data.obsm['rep_auc_mtx']
-        auc_mtx = data.obsm['auc_mtx']
-        # change receptor auc matrix column names so it can aligned with the auc matrix column names
-        col_names = receptor_auc_mtx.columns.copy()
-        col_names = [f'{i}(+)' for i in col_names]
-        receptor_auc_mtx.columns = col_names
-        # ! only uses modules that occurs in the auc matrix aka they have been identified as regulons
-        later_regulon_names = list(set(auc_mtx.columns).intersection(set(col_names)))
-        receptor_auc_mtx = receptor_auc_mtx[later_regulon_names]
-        # combine two dfs
-        df = pd.concat([auc_mtx, receptor_auc_mtx], axis=1)
-        # sum values
-        isr_df = df.groupby(level=0, axis=1).sum()
-        data.obsm['isr'] = isr_df
-        return isr_df
-    else:
-        print('ISR score matrix exists')
-        return data.obsm['isr']
-
-
-# def cal_isr_exp(data, regulon, receptor, weight=1):
-#     regulon = f'{regulon}(+)' if '(+)' not in regulon else regulon
-#     exp_mtx = data.to_df()
-#     receptor_exp_mtx = exp_mtx[receptor
-#     receptor_exp_mtx = receptor_exp_mtx * weight
-#     regulon_auc_mtx = data.obsm['auc_mtx'][regulon]
-#     # combine regulon AUC value and receptor expression value
-#     df = pd.concat([receptor_exp_mtx, regulon_auc_mtx], axis=1)
-#     # sum receptor expression value
-#     isr_df = df.groupby(level=0, axis=1).sum()
-#     return isr_df
-
-
-def get_only_receptors(adata):
-    """get only receptors, exclude target genes"""
-    dd = adata.uns['regulon_dict']
-    rd = adata.uns['receptor_dict_all']
-    new_rd = {}
-    for regulon, targets in dd.items():
-        if regulon.strip('(+)') in rd:
-            onlyreceptor = set(rd[regulon.strip('(+)')]) - set(targets)
-            new_rd[regulon.strip('(+)')] = list(onlyreceptor)
-        else:
-            new_rd[regulon.strip('(+)')] = targets
-    # for module, rr in rd.items():
-    #     # for every module
-    #     if f'{module}(+)' in dd:  # if the module contains target genes
-    #         onlyreceptor = set(rr) - set(dd[f'{module}(+)'])  # delete targets
-    #         new_rd[module] = list(onlyreceptor)
-    #     else:  # if the module does not contain target genes
-    #         new_rd[module] = rr  # remain the same
-    return new_rd
-
-
-def receptor_auc(adata, receptor_dict, auc_threshold=None, p_range=0.01, num_workers=20):
-    """
-    Calculate AUC value for modules that detected receptor genes within
-    :param auc_threshold:
-    :param p_range:
-    :param num_workers:
-    :return:
-    """
-    from ctxcore.genesig import GeneSignature
-    d = {}
-    for k,v in receptor_dict.items():
-        if len(v)>0:
-            d[k]=v
-    # 1. create new modules
-    receptor_modules = list(
-        map(
-            lambda x: GeneSignature(
-                name=x,
-                gene2weight=d[x],
-            ),
-            d,
-        )
-    )
-    ex_matrix = adata.to_df()
-    from pyscenic.aucell import aucell
-    receptor_auc_mtx = aucell(ex_matrix, receptor_modules, auc_threshold=auc_threshold, num_workers=num_workers)
-    return receptor_auc_mtx
-
+        self.cal_auc(exp_mat,
+                     regulons,
+                     auc_threshold=self.params["auc_threshold"],
+                     num_workers=num_workers,
+                     save_tmp=save_tmp,
+                     cache=cache,
+                     noweights=noweights,
+                     normalize=normalize,
+                     fn=f'{self.project_name}_auc.csv')
