@@ -36,12 +36,13 @@ from pyscenic.aucell import aucell, derive_auc_threshold
 from pyscenic.prune import prune2df, df2regulons
 
 # modules in self project
-from .network import Network
+
 from .autocor import *
 from .corexp import *
 from .c_autocor import gearys_c
 from .m_autocor import morans_i_p_values, morans_i_zscore
 from .g_autocor import getis_g
+from .network import Network
 
 
 def intersection_ci(iterableA, iterableB, key=lambda x: x) -> list:
@@ -108,6 +109,7 @@ class InferNetwork(Network):
         super().__init__()
         self.data = adata
         self.project_name = project_name
+        self.project_saving_dir = None
 
         self.more_stats = None
         self.weights = None
@@ -137,6 +139,7 @@ class InferNetwork(Network):
               num_workers=None,
               save_tmp=False,
               cache=False,
+              output_dir=None,
 
               layers='raw_counts',
               model='bernoulli',
@@ -153,10 +156,27 @@ class InferNetwork(Network):
               somde_k=20,
               noweights=None,
               normalize: bool = False):
+        print('--------------------')
+        # Set project name
+        print(f'Project name is {self.project_name}')
+        # Set general output directory
+        if output_dir is None:  # when output dir is not set
+            output_dir = os.path.dirname(os.path.abspath(__file__))  # set output dir to current working dir
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        # Set project output directory inside of the output dir
+        self.project_saving_dir = os.path.join(output_dir, self.project_name)
+        if not os.path.exists(self.project_saving_dir):
+            os.makedirs(self.project_saving_dir)
+        print(f'Saving output files into {self.project_saving_dir}')
+        # Set project tmp directory to save temporary files
         if save_tmp:
-            self.tmp_dir = os.path.join(self.project_name, 'tmp_files')
+            self.tmp_dir = os.path.join(self.project_saving_dir, 'tmp_files')
             if not os.path.exists(self.tmp_dir):
-                os.cache=cacedirs(self.tmp_dir)
+                # os.cache = cacedirs(self.tmp_dir)
+                os.makedirs(self.tmp_dir)
+            print(f'Saving temporary files to {self.tmp_dir}')
+        print('--------------------')
 
         global adjacencies
         exp_mat = self._data.to_df()
@@ -189,7 +209,7 @@ class InferNetwork(Network):
                                weighted_graph=weighted_graph,
                                cache=cache,
                                save_tmp=save_tmp,
-                               fn=f'{self.project_name}_{mode}_adj.csv',
+                               fn=os.path.join(self.tmp_dir, f'{mode}_adj.csv'),
                                local=local,
                                methods=methods,
                                operation=operation,
@@ -214,8 +234,8 @@ class InferNetwork(Network):
                                       num_workers=num_workers,
                                       save_tmp=save_tmp,
                                       cache=cache,
-                                      fn=f'{self.project_name}_motifs.csv',
-                                      prefix=self.project_name,
+                                      fn=f'{self.project_saving_dir}_motifs.csv',
+                                      # prefix=self.project_name,
                                       rank_threshold=self.params["rank_threshold"],
                                       auc_threshold=self.params["prune_auc_threshold"],
                                       nes_threshold=self.params["nes_threshold"],
@@ -230,17 +250,7 @@ class InferNetwork(Network):
                      cache=cache,
                      noweights=noweights,
                      normalize=normalize,
-                     fn=f'{self.tmp_dir}/auc.csv')
-        # self.compute_regulons(adjacencies,
-        #                       exp_mat,
-        #                       dbs,
-        #                       motif_anno_fn,
-        #                       rho_mask_dropouts=rho_mask_dropouts,
-        #                       num_workers=num_workers,
-        #                       save_tmp=save_tmp,
-        #                       cache=cache,
-        #                       noweights=noweights,
-        #                       normalize=normalize)
+                     fn=os.path.join(self.tmp_dir, 'auc_mtx.csv'))
 
         # 6.1. Receptor AUCs
         if niche_df is not None:
@@ -253,9 +263,8 @@ class InferNetwork(Network):
                                fn=f'{self.tmp_dir}/regulon_specificity_scores.txt')
 
         # 8. Save results to h5ad file
-        # TODO: check if data has adj, regulon_dict, auc_mtx etc. before saving to disk
         # dtype=object
-        self.data.write_h5ad(f'{self.project_name}_spagrn.h5ad')
+        self.data.write_h5ad(f'{self.project_saving_dir}_spagrn.h5ad')
         return self.data
 
     @property
@@ -339,7 +348,7 @@ class InferNetwork(Network):
             * pandas DataFrame (rows=observations, columns=genes)
             * dense 2D numpy.ndarray
             * sparse scipy.sparse.csc_matrix
-        :param tf_names: list of target TFs or all
+        :param tf_names: list of target TFs or a`ll
         :param genes: list of interested genes
         :param num_workers: number of thread
         :param verbose: if print out running details
@@ -398,19 +407,19 @@ class InferNetwork(Network):
 
         more_stats = pd.DataFrame(index=adata.var_names)
         if local:
-            if cache and os.path.isfile('local_more_stats.csv'):
-                print('Found file local_more_stats.csv')
-                more_stats = pd.read_csv('local_more_stats.csv', index_col=0, sep='\t')
+            if cache and os.path.isfile(f'{self.tmp_dir}/local_more_stats.csv.csv'):
+                print(f'Found cached file {self.tmp_dir}/local_more_stats.csv')
+                more_stats = pd.read_csv(f'{self.tmp_dir}/local_more_stats.csv', index_col=0, sep='\t')
                 self.more_stats = more_stats
                 return more_stats
             print('Computing SOMDE...')
             adjusted_p_values = somde_p_values(adata, k=somde_k, layer_key=layer_key, latent_obsm_key=latent_obsm_key)
             more_stats['FDR_SOMDE'] = adjusted_p_values
-            more_stats.to_csv('local_more_stats.csv', sep='\t')
+            more_stats.to_csv(f'{self.tmp_dir}/local_more_stats.csv', sep='\t')
         else:
-            if cache and os.path.isfile('more_stats.csv'):
-                print('Found file more_stats.csv')
-                more_stats = pd.read_csv('more_stats.csv', index_col=0, sep='\t')
+            if cache and os.path.isfile(f'{self.tmp_dir}/more_stats.csv'):
+                print(f'Found cached file {self.tmp_dir}/more_stats.csv')
+                more_stats = pd.read_csv(f'{self.tmp_dir}/more_stats.csv', index_col=0, sep='\t')
                 self.more_stats = more_stats
                 return more_stats
             print("Computing Moran's I...")
@@ -579,7 +588,7 @@ class InferNetwork(Network):
         """
         global local_correlations
         if cache and os.path.isfile(fn):
-            print(f'Found file {fn}')
+            print(f'Found cached file {fn}')
             local_correlations = pd.read_csv(fn)
             self.data.uns['adj'] = local_correlations
             return local_correlations
@@ -664,11 +673,11 @@ class InferNetwork(Network):
                                                                select_genes_not_tfs,
                                                                num_workers=jobs,
                                                                layer_key=layer_key)
-        # 2025-01-05
+
         local_correlations['importance'] = local_correlations['importance'].astype(np.float64)
         self.data.uns['adj'] = local_correlations
         if save_tmp:
-            local_correlations.to_csv(os.path.join(self.tmp_dir, 'local_correlations.csv'), index=False)
+            local_correlations.to_csv(os.path.join(self.tmp_dir, f'{mode}_adj.csv'), index=False)
         return local_correlations
 
     # ------------------------------------------------------#
@@ -689,9 +698,12 @@ class InferNetwork(Network):
             * dense 2D numpy.ndarray
             * sparse scipy.sparse.csc_matrix
         :param rho_mask_dropouts:
+        :param save_tmp:
+        :param cache:
         :return:
         """
         if cache and os.path.isfile(f'{self.tmp_dir}/modules.pkl'):
+            print(f'Find cached file {self.tmp_dir}/modules.pkl')
             modules = pickle.load(open(f'{self.tmp_dir}/modules.pkl', 'rb'))
             return modules
         modules = list(
@@ -714,7 +726,6 @@ class InferNetwork(Network):
                       cache: bool = False,
                       save_tmp: bool = False,
                       fn: str = 'motifs.csv',
-                      prefix: str = 'exp',
                       **kwargs) -> Sequence[Regulon]:
         """
         First, calculate a list of enriched motifs and the corresponding target genes for all modules.
@@ -736,7 +747,6 @@ class InferNetwork(Network):
         :param cache:
         :param save_tmp:
         :param fn:
-        :param prefix:
         :param kwargs:
         :return: A dataframe.
         """
@@ -767,7 +777,7 @@ class InferNetwork(Network):
 
         # save to data
         if save_tmp:
-            with open(f'{prefix}_regulons.json', 'w') as f:
+            with open(f'{self.tmp_dir}/regulons.json', 'w') as f:
                 json.dump(self.regulon_dict, f, sort_keys=True, indent=4)
         return regulon_list
 
@@ -805,6 +815,7 @@ class InferNetwork(Network):
         :return: A dataframe with the AUCs (n_cells x n_modules).
         """
         if cache and os.path.isfile(fn):
+            print(f'Find cached file {fn}')
             auc_mtx = pd.read_csv(fn, index_col=0)  # important! cell must be index, not one of the column
             self.auc_mtx = auc_mtx
             self.data.obsm['auc_mtx'] = self.auc_mtx
@@ -863,7 +874,6 @@ class InferNetwork(Network):
         :param receptor_auc_mtx: auc matrix for modules containing receptor genes
         :return:
         """
-        # receptor_auc_mtx = self.data.obsm['rep_auc_mtx']
         auc_mtx = self.data.obsm['auc_mtx']
         # change receptor auc matrix column names so it can aligned with the auc matrix column names
         col_names = receptor_auc_mtx.columns.copy()
@@ -940,30 +950,30 @@ class InferNetwork(Network):
         self.data.uns['receptor_dict'] = receptor_tf
 
     # ------------------------------------------------------------------------------------------------
-    def compute_regulons(self, adjacencies, exp_mat, dbs, motif_anno_fn, rho_mask_dropouts, num_workers, save_tmp,
-                         cache,
-                         noweights, normalize):
-        modules = self.get_modules(adjacencies, exp_mat, rho_mask_dropouts=rho_mask_dropouts, prefix=self.project_name)
-
-        regulons = self.prune_modules(modules,
-                                      dbs,
-                                      motif_anno_fn,
-                                      num_workers=num_workers,
-                                      save_tmp=save_tmp,
-                                      cache=cache,
-                                      fn=f'{self.project_name}_motifs.csv',
-                                      prefix=self.project_name,
-                                      rank_threshold=self.params["rank_threshold"],
-                                      auc_threshold=self.params["prune_auc_threshold"],
-                                      nes_threshold=self.params["nes_threshold"],
-                                      motif_similarity_fdr=self.params["motif_similarity_fdr"])
-
-        self.cal_auc(exp_mat,
-                     regulons,
-                     auc_threshold=self.params["auc_threshold"],
-                     num_workers=num_workers,
-                     save_tmp=save_tmp,
-                     cache=cache,
-                     noweights=noweights,
-                     normalize=normalize,
-                     fn=f'{self.project_name}_auc.csv')
+    # def compute_regulons(self, adjacencies, exp_mat, dbs, motif_anno_fn, rho_mask_dropouts, num_workers, save_tmp,
+    #                      cache,
+    #                      noweights, normalize):
+    #     modules = self.get_modules(adjacencies, exp_mat, rho_mask_dropouts=rho_mask_dropouts, prefix=self.project_name)
+    #
+    #     regulons = self.prune_modules(modules,
+    #                                   dbs,
+    #                                   motif_anno_fn,
+    #                                   num_workers=num_workers,
+    #                                   save_tmp=save_tmp,
+    #                                   cache=cache,
+    #                                   fn=f'{self.project_name}_motifs.csv',
+    #                                   prefix=self.project_name,
+    #                                   rank_threshold=self.params["rank_threshold"],
+    #                                   auc_threshold=self.params["prune_auc_threshold"],
+    #                                   nes_threshold=self.params["nes_threshold"],
+    #                                   motif_similarity_fdr=self.params["motif_similarity_fdr"])
+    #
+    #     self.cal_auc(exp_mat,
+    #                  regulons,
+    #                  auc_threshold=self.params["auc_threshold"],
+    #                  num_workers=num_workers,
+    #                  save_tmp=save_tmp,
+    #                  cache=cache,
+    #                  noweights=noweights,
+    #                  normalize=normalize,
+    #                  fn=f'{self.project_name}_auc.csv')
