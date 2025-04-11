@@ -109,7 +109,6 @@ class InferNetwork(Network):
         super().__init__()
         self.data = adata
         self.project_name = project_name
-        self.project_saving_dir = None
 
         self.more_stats = None
         self.weights = None
@@ -156,7 +155,7 @@ class InferNetwork(Network):
               somde_k=20,
               noweights=None,
               normalize: bool = False):
-        print('--------------------')
+        print('----------------------------------------')
         # Set project name
         print(f'Project name is {self.project_name}')
         # Set general output directory
@@ -164,19 +163,14 @@ class InferNetwork(Network):
             output_dir = os.path.dirname(os.path.abspath(__file__))  # set output dir to current working dir
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        # Set project output directory inside of the output dir
-        self.project_saving_dir = os.path.join(output_dir, self.project_name)
-        if not os.path.exists(self.project_saving_dir):
-            os.makedirs(self.project_saving_dir)
-        print(f'Saving output files into {self.project_saving_dir}')
+        print(f'Saving output files into {output_dir}')
         # Set project tmp directory to save temporary files
         if save_tmp:
-            self.tmp_dir = os.path.join(self.project_saving_dir, 'tmp_files')
+            self.tmp_dir = os.path.join(output_dir, 'tmp_files')
             if not os.path.exists(self.tmp_dir):
-                # os.cache = cacedirs(self.tmp_dir)
                 os.makedirs(self.tmp_dir)
             print(f'Saving temporary files to {self.tmp_dir}')
-        print('--------------------')
+        print('----------------------------------------')
 
         global adjacencies
         exp_mat = self._data.to_df()
@@ -234,8 +228,7 @@ class InferNetwork(Network):
                                       num_workers=num_workers,
                                       save_tmp=save_tmp,
                                       cache=cache,
-                                      fn=f'{self.project_saving_dir}_motifs.csv',
-                                      # prefix=self.project_name,
+                                      fn=os.path.join(self.tmp_dir, 'motifs.csv'),
                                       rank_threshold=self.params["rank_threshold"],
                                       auc_threshold=self.params["prune_auc_threshold"],
                                       nes_threshold=self.params["nes_threshold"],
@@ -264,7 +257,7 @@ class InferNetwork(Network):
 
         # 8. Save results to h5ad file
         # dtype=object
-        self.data.write_h5ad(f'{self.project_saving_dir}_spagrn.h5ad')
+        self.data.write_h5ad(os.path.join(output_dir, f'{self.project_name}_spagrn.h5ad'))
         return self.data
 
     @property
@@ -705,6 +698,7 @@ class InferNetwork(Network):
         if cache and os.path.isfile(f'{self.tmp_dir}/modules.pkl'):
             print(f'Find cached file {self.tmp_dir}/modules.pkl')
             modules = pickle.load(open(f'{self.tmp_dir}/modules.pkl', 'rb'))
+            self.modules = modules
             return modules
         modules = list(
             modules_from_adjacencies(adjacencies, matrix, rho_mask_dropouts=rho_mask_dropouts, **kwargs)
@@ -751,6 +745,7 @@ class InferNetwork(Network):
         :return: A dataframe.
         """
         if cache and os.path.isfile(fn):
+            print(f'Find cached file {fn}')
             df = self.read_motif_file(fn)
             regulon_list = df2regulons(df)
             self.regulons = regulon_list
@@ -764,7 +759,7 @@ class InferNetwork(Network):
         # #1.
         with ProgressBar():
             df = prune2df(dbs, modules, motif_anno_fn, num_workers=num_workers, **kwargs)  # rank_threshold
-
+            df.to_csv(fn)
         # this function actually did two things. 1. get df, 2. turn df into list of Regulons
         # #2.
         regulon_list = df2regulons(df)
