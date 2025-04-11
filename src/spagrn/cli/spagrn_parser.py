@@ -17,24 +17,13 @@ from spagrn.regulatory_network import InferNetwork as irn
 import spagrn.plot as prn
 
 
-# def receptor_command(args):
-#     data = irn.read_file(args.expression_mtx_fname)
-#     grn = irn(data)
-#     grn.get_receptors(args.reference, receptor_key=args.receptor_key, save_tmp=args.save_tmp)
-#     data.write_h5ad(args.expression_mtx_fname)
-
-
 def inference_command(args):
     # avoid TypeError: stat: path should be string, bytes, os.PathLike or integer, not _io.TextIOWrapper
-    out_dir = args.output
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-    prefix = os.path.join(out_dir, args.method)
     # load data
     data = irn.read_file(args.expression_mtx_fname)
     data = irn.preprocess(data)
     # create grn
-    grn = irn(data)
+    grn = irn(data, project_name=args.project_name)
     # run_all analysis
     grn.infer(args.database,
               args.motif,
@@ -42,18 +31,24 @@ def inference_command(args):
               niche_df=args.reference,
               num_workers=args.num_workers,
               cache=args.cache,
+              output_dir=args.output,
               save_tmp=args.save_tmp,
-              c_threshold=args.c_threshold,
               layers=args.layer_key,
               latent_obsm_key=args.latent_obsm_key,
+              umi_counts_obs_key=args.umi_counts_obs_key,
               model=args.model,
               n_neighbors=args.n_neighbors,
+              methods=args.methods,
+              local=args.local,
+              somde_k=args.somde_k,
+              operation=args.operation,
+              combine=args.combine,
+              mode=args.mode,
               weighted_graph=args.weighted_graph,
               cluster_label=args.cluster_label,
-              method=args.method,
               noweights=args.noweights,
-              rho_mask_dropouts=args.rho_mask_dropouts,
-              project_name=prefix)
+              normalize=args.normalize,
+              rho_mask_dropouts=args.rho_mask_dropouts)
 
 
 def add_computation_parameters(parser):
@@ -77,14 +72,40 @@ def add_computation_parameters(parser):
     return parser
 
 
-def add_coexp_parameters(parser):
-    group = parser.add_argument_group("co-expressed module generation arguments")
-    # SPG params
+def add_spatial_autocor_parameters(parser):
+    group = parser.add_argument_group("spatial autocorrelation module generation arguments")
     group.add_argument(
-        "--c_threshold",
-        type=float,
-        default=-1,
-        help="",
+        "--methods",
+        default=None,
+        help="The algorithm for computing spatial autocorrelation, input a list. choose from ['FDR_C', 'FDR_I', 'FDR_G', 'FDR']",
+    )
+    group.add_argument(
+        "--local",
+        default=False,
+        help="If to use local spatial autocorrelation algorithm SOMDE.",
+    )
+    group.add_argument(
+        "--somde_k",
+        default=20,
+        type=int,
+        help="kernel value k when using local spatial autocorrelation algorithm SOMDE.",
+    )
+    group.add_argument(
+        "--mode",
+        choices=["moran", "geary"],
+        default="moran",
+        help="The algorithm for computing spatial genes co-expression, bi-variate version (default: moran).",
+    )
+    group.add_argument(
+        "--operation",
+        choices=["intersection", "union"],
+        default="intersection",
+        help="When provide several methods to compute spatial autocorrelation, ",
+    )
+    group.add_argument(
+        "--combine",
+        default=False,
+        help="combine",
     )
     group.add_argument(
         "--layer_key",
@@ -103,6 +124,12 @@ def add_coexp_parameters(parser):
         "--latent_obsm_key",
         type=str,
         default='spatial',
+        help="",
+    )
+    group.add_argument(
+        "--umi_counts_obs_key",
+        type=str,
+        default=None,
         help="",
     )
     group.add_argument(
@@ -137,25 +164,24 @@ def add_coexp_parameters(parser):
         default=False,
         help="",
     )
-    # SCC params
-    group.add_argument(
-        "--sigma",
-        type=int,
-        default=15,
-        help="",
-    )
-    group.add_argument(
-        "--zero_cutoff",
-        type=int,
-        default=5,
-        help="",
-    )
-    group.add_argument(
-        "--cor_method",
-        type=str,
-        default='spearman',
-        help="",
-    )
+    # group.add_argument(
+    #     "--sigma",
+    #     type=int,
+    #     default=15,
+    #     help="",
+    # )
+    # group.add_argument(
+    #     "--zero_cutoff",
+    #     type=int,
+    #     default=5,
+    #     help="",
+    # )
+    # group.add_argument(
+    #     "--cor_method",
+    #     type=str,
+    #     default='spearman',
+    #     help="",
+    # )
     return parser
 
 
@@ -238,18 +264,18 @@ def add_receptor_parameters(parser):
     group.add_argument(
         "--reference",
         # type=argparse.FileType("r"),
-        type=str,
-        help="",
+        # type=str,
+        help="pandas.DataFrame containing ligand-receptor information. MUST be pandas.DataFrame, not the name of the file",
         default=None,
         required=False,
     )
-    group.add_argument(
-        "--receptor_key",
-        type=str,
-        default='to',
-        help="",
-        required=False,
-    )
+    # group.add_argument(
+    #     "--receptor_key",
+    #     type=str,
+    #     default='to',
+    #     help="",
+    #     required=False,
+    # )
 
 
 def create_argument_parser():
@@ -299,11 +325,10 @@ def create_argument_parser():
         help="motif annotation file, in tbl format.",
     )
     parser_infer.add_argument(
-        "-m",
-        "--method",
-        choices=["spg", "scc"],
-        default="spg",
-        help="The algorithm for gene regulatory network reconstruction (default: spg).",
+        "-p",
+        "--project_name",
+        default="",
+        help="Project name/Prefix of output files.",
     )
     parser_infer.add_argument(
         "-c",
@@ -320,7 +345,7 @@ def create_argument_parser():
         help="Output file/stream, i.e. the adjacencies table with correlations (csv, tsv).",
     )
     add_computation_parameters(parser_infer)
-    add_coexp_parameters(parser_infer)
+    add_spatial_autocor_parameters(parser_infer)
     add_ctx_parameters(parser_infer)
     add_aucell_parameters(parser_infer)
     add_receptor_parameters(parser_infer)
