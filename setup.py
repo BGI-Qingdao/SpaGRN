@@ -6,7 +6,7 @@ from pathlib import Path
 
 setuptools.setup(
     name="spagrn",
-    version="1.1.2",
+    version="1.1.3",
     author="Yao LI",
     author_email="liyao1@genomics.cn",
     url="https://github.com/BGI-Qingdao/SpaGRN",
@@ -14,11 +14,14 @@ setuptools.setup(
     python_requires=">=3.8,<3.9",
     packages=setuptools.find_packages(),
     install_requires=[
-        "anndata==0.8.0",
+        #"anndata==0.8.0",
+        "anndata>=0.8.0,<0.9",
         "pandas<2.0.0, >=1.3.4",
-        "scanpy==1.9.1",
-        "seaborn",
-        "matplotlib",
+        #"scanpy==1.9.1",
+        "scanpy>=1.9.1,<1.9.4",
+        #"seaborn",
+        "seaborn<0.13",
+        "matplotlib<=3.5.3",
         "pyscenic==0.12.1",
         "hotspotsc==1.1.1",
         "scipy",
@@ -26,7 +29,9 @@ setuptools.setup(
         "dask",
         "arboreto",
         "ctxcore>=0.2.0",
-        "scikit-learn"
+        "scikit-learn",
+        "esda",
+        "pysal"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
