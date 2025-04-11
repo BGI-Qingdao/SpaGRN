@@ -34,7 +34,7 @@ def inference_command(args):
               output_dir=args.output,
               save_tmp=args.save_tmp,
               layers=args.layer_key,
-              latent_obsm_key=args.latent_obsm_key,
+              latent_obsm_key=args.spatial,  # IMPORTANT!
               umi_counts_obs_key=args.umi_counts_obs_key,
               model=args.model,
               n_neighbors=args.n_neighbors,
@@ -120,12 +120,12 @@ def add_spatial_autocor_parameters(parser):
         choices=["bernoulli", "danb", "normal", "none"],
         help="",
     )
-    group.add_argument(
-        "--latent_obsm_key",
-        type=str,
-        default='spatial',
-        help="",
-    )
+    # group.add_argument(
+    #     "--latent_obsm_key",
+    #     type=str,
+    #     default='spatial',
+    #     help="",
+    # )
     group.add_argument(
         "--umi_counts_obs_key",
         type=str,
@@ -301,7 +301,7 @@ def create_argument_parser():
         # type=argparse.FileType("r"),
         type=str,
         help="The name of the file that contains the expression matrix for the single cell experiment."
-             " Two file formats are supported: csv (rows=cells x columns=genes) or loom (rows=genes x columns=cells).",
+             " H5AD file formats are supported.",
     )
     parser_infer.add_argument(
         "tfs_fname",
@@ -343,6 +343,12 @@ def create_argument_parser():
         type=str,
         # default=str(sys.stdout),
         help="Output file/stream, i.e. the adjacencies table with correlations (csv, tsv).",
+    )
+    parser_infer.add_argument(
+        "--spatial",
+        type=str,
+        default='spatial',
+        help="",
     )
     add_computation_parameters(parser_infer)
     add_spatial_autocor_parameters(parser_infer)
