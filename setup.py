@@ -6,7 +6,7 @@ from pathlib import Path
 
 setuptools.setup(
     name="spagrn",
-    version="1.1.4-beta",
+    version="1.1.4",
     author="Yao LI",
     author_email="liyao1@genomics.cn",
     url="https://github.com/BGI-Qingdao/SpaGRN",

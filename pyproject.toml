@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spagrn"
-version = "1.1.4-beta"
+version = "1.1.4"
 authors = [
     {name = "Yao LI", email = "liyao1@genomics.cn"},
 ]
